@@ -10,12 +10,14 @@
 
 ## 현재 방식
 
-정적 웹앱입니다.
+Vite 기반 정적 웹앱입니다.
 
-- `index.html`: 화면
-- `styles.css`: 스타일
-- `app.js`: 렌더링 로직
-- `data/project.json`: MVP 데이터
+- `index.html`: 화면 shell
+- `src/app.js`: 렌더링 로직
+- `src/styles.css`: 게임 UI 스타일
+- `public/data/project.json`: MVP 데이터
+- `honeycomb-grid`: hex grid 좌표 계산
+- SVG polygon: 빈틈 없는 헥스 맵 렌더링
 
 ## 배포 추천
 

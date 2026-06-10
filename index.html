@@ -3,59 +3,82 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Noji Land Builder</title>
-  <link rel="stylesheet" href="styles.css" />
+  <title>Noji Tycoon</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Gowun+Dodum&family=Orbitron:wght@600;800&display=swap" rel="stylesheet">
 </head>
 <body>
-  <header class="hero">
-    <div>
-      <p class="eyebrow">Project Noji</p>
-      <h1>Noji Land Builder</h1>
-      <p id="land-summary">Loading...</p>
-    </div>
-    <div class="level-card">
-      <span class="label">LAND LEVEL</span>
-      <strong id="land-level">Lv.?</strong>
-      <p id="land-level-name"></p>
-    </div>
-  </header>
-
-  <main class="layout">
-    <section class="panel map-panel">
-      <div class="section-title">
-        <h2>Hex Land Map</h2>
-        <span>concept map · 1 hex ≈ 1평</span>
+  <div id="app">
+    <header class="topbar">
+      <div class="brand">
+        <span class="crest">⬢</span>
+        <div>
+          <p>PROJECT NOJI</p>
+          <h1>Noji Tycoon</h1>
+        </div>
       </div>
-      <div id="hex-map" class="hex-map" aria-label="conceptual hex map"></div>
-      <div id="zone-legend" class="legend"></div>
-    </section>
+      <div id="resource-bar" class="resource-bar"></div>
+    </header>
 
-    <section class="panel">
-      <div class="section-title"><h2>Tech Tree</h2><span>level unlocks</span></div>
-      <div id="levels" class="levels"></div>
-    </section>
+    <main class="game-shell">
+      <aside class="side-panel left-panel">
+        <section class="land-card ornate">
+          <p class="label">LAND STATUS</p>
+          <h2 id="land-name">Loading...</h2>
+          <div class="level-meter">
+            <span id="land-level">Lv.?</span>
+            <div class="meter"><i id="level-fill"></i></div>
+          </div>
+          <p id="land-summary"></p>
+        </section>
 
-    <section class="panel">
-      <div class="section-title"><h2>Actions</h2><span>what changes the land</span></div>
-      <div id="actions" class="cards"></div>
-    </section>
+        <section class="panel">
+          <div class="panel-title"><h3>Tech Era</h3><span>unlock ladder</span></div>
+          <div id="levels" class="era-list"></div>
+        </section>
+      </aside>
 
-    <section class="panel">
-      <div class="section-title"><h2>Quests</h2><span>assigned missions</span></div>
-      <div id="quests" class="cards"></div>
-    </section>
+      <section class="map-stage">
+        <div class="map-toolbar">
+          <div>
+            <strong>Hachunri 179-2</strong>
+            <span>1 hex ≈ 1평 · Honeycomb SVG grid</span>
+          </div>
+          <button id="reset-selection">Reset View</button>
+        </div>
+        <div class="map-frame">
+          <svg id="hex-svg" role="img" aria-label="Noji hex land map"></svg>
+          <div id="selected-tile" class="selected-card">타일을 선택해봐.</div>
+        </div>
+        <div id="zone-legend" class="legend"></div>
+      </section>
 
-    <section class="panel">
-      <div class="section-title"><h2>Objects & Resources</h2><span>owned / locked</span></div>
-      <div id="objects" class="objects"></div>
-    </section>
+      <aside class="side-panel right-panel">
+        <section class="panel">
+          <div class="panel-title"><h3>Active Quests</h3><span>missions</span></div>
+          <div id="quests" class="quest-list"></div>
+        </section>
 
-    <section class="panel">
-      <div class="section-title"><h2>Players</h2><span>roles</span></div>
-      <div id="players" class="players"></div>
-    </section>
-  </main>
+        <section class="panel">
+          <div class="panel-title"><h3>Build Objects</h3><span>owned / locked</span></div>
+          <div id="objects" class="object-grid"></div>
+        </section>
+      </aside>
+    </main>
 
-  <script src="app.js"></script>
+    <section class="bottom-dock">
+      <div class="panel wide">
+        <div class="panel-title"><h3>Available Actions</h3><span>change the land</span></div>
+        <div id="actions" class="action-row"></div>
+      </div>
+      <div class="panel players-panel">
+        <div class="panel-title"><h3>Players</h3><span>party</span></div>
+        <div id="players" class="players"></div>
+      </div>
+    </section>
+  </div>
+
+  <script type="module" src="/src/app.js"></script>
 </body>
 </html>

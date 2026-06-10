@@ -1,18 +1,21 @@
 {
-  "name": "noji-land-builder",
-  "version": "0.1.0",
+  "name": "noji-tycoon",
+  "version": "0.2.0",
   "private": true,
   "description": "Game-like land development dashboard for project-Noji.",
+  "type": "module",
   "scripts": {
-    "dev": "python3 -m http.server 4174",
-    "preview": "python3 -m http.server 4174",
-    "check": "python3 -m json.tool data/project.json > /dev/null"
+    "dev": "vite --host 0.0.0.0 --port 4174",
+    "build": "vite build",
+    "preview": "vite preview --host 0.0.0.0 --port 4174",
+    "check": "python3 -m json.tool public/data/project.json > /dev/null && npm run build"
   },
-  "keywords": [
-    "noji",
-    "land",
-    "dashboard",
-    "tech-tree"
-  ],
+  "dependencies": {
+    "@vitejs/plugin-basic-ssl": "latest",
+    "honeycomb-grid": "latest",
+    "vite": "latest"
+  },
+  "devDependencies": {},
+  "keywords": ["noji", "land", "dashboard", "tech-tree", "hex-grid"],
   "license": "UNLICENSED"
 }
