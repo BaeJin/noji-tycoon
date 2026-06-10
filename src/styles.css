@@ -553,3 +553,7 @@ body.editor-mode .hex-tile:hover { stroke: var(--gold); stroke-width: 2.2; filte
   color:#102014;
   font-weight:800;
 }
+.hex-tile { stroke-opacity: .38; }
+.hex-tile.zone-boundary { stroke: rgba(238, 255, 197, .62); stroke-width: 1.65; stroke-opacity: .92; }
+body.editor-mode .hex-tile { stroke-opacity: .5; }
+body.editor-mode .hex-tile.zone-boundary { stroke: rgba(240, 193, 90, .88); stroke-width: 2; }
