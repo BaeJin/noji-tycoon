@@ -560,3 +560,5 @@ body.editor-mode .hex-tile:hover { stroke: var(--gold); stroke-width: 2.2; filte
 .zone-edge-boundary { stroke: rgba(238, 255, 197, .78); stroke-width: 1.9; stroke-linecap: round; vector-effect: non-scaling-stroke; pointer-events: none; }
 body.editor-mode .hex-tile { stroke: rgba(205,245,161,.16); stroke-width: .75; stroke-opacity: .5; }
 body.editor-mode .zone-edge-boundary { stroke: rgba(240, 193, 90, .95); stroke-width: 2.25; }
+.map-outer-boundary { stroke: rgba(238, 255, 197, .42); stroke-width: 1.35; }
+body.editor-mode .map-outer-boundary { stroke: rgba(238, 255, 197, .55); stroke-width: 1.55; }

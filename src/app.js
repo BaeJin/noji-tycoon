@@ -166,25 +166,22 @@ function hexCorners(cx, cy, size) {
   return hexCornersArray(cx, cy, size).map(p => `${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(' ');
 }
 
-// Flat-top axial grid. Corner order is 0°, 60°, 120°, 180°, 240°, 300°.
-// Each edge midpoint points toward the neighbor across that edge.
-const EDGE_DIRECTIONS = [
-  [1, 0],    // edge 0: east / lower-right on screen
-  [0, 1],    // edge 1: south
-  [-1, 1],   // edge 2: west / lower-left on screen
-  [-1, 0],   // edge 3: west / upper-left on screen
-  [0, -1],   // edge 4: north
-  [1, -1]    // edge 5: east / upper-right on screen
-];
-
-function boundaryEdgesForTile(tile) {
-  return EDGE_DIRECTIONS
-    .map(([dq, dr], edgeIndex) => {
-      const neighbor = tileState.get(tileKey(tile.q + dq, tile.r + dr));
-      return !neighbor || neighbor.zone !== tile.zone ? edgeIndex : null;
-    })
-    .filter(edgeIndex => edgeIndex !== null);
+function edgeKey(a, b) {
+  const aKey = `${a.x.toFixed(2)},${a.y.toFixed(2)}`;
+  const bKey = `${b.x.toFixed(2)},${b.y.toFixed(2)}`;
+  return [aKey, bKey].sort().join('|');
 }
+
+function collectHexEdges(edgeMap, corners, zone) {
+  for (let i = 0; i < 6; i += 1) {
+    const a = corners[i];
+    const b = corners[(i + 1) % 6];
+    const key = edgeKey(a, b);
+    if (!edgeMap.has(key)) edgeMap.set(key, { a, b, zones: [] });
+    edgeMap.get(key).zones.push(zone);
+  }
+}
+
 
 function render(data) {
   document.querySelector('#land-name').textContent = data.land.name;
@@ -262,7 +259,7 @@ function renderHexMap(data) {
   `;
 
   const pointByKey = new Map();
-  const boundarySegments = [];
+  const edgeMap = new Map();
   for (const hex of grid) {
     const { x, y } = hexToPoint(hex);
     const q = hex.q;
@@ -285,11 +282,7 @@ function renderHexMap(data) {
     poly.setAttribute('points', points);
     poly.setAttribute('fill', meta.color);
     poly.setAttribute('class', `hex-tile zone-${zone}`);
-    for (const edgeIndex of boundaryEdgesForTile(tile)) {
-      const a = corners[edgeIndex];
-      const b = corners[(edgeIndex + 1) % 6];
-      boundarySegments.push({ a, b, zone });
-    }
+    collectHexEdges(edgeMap, corners, zone);
     poly.dataset.q = q;
     poly.dataset.r = r;
     poly.dataset.zone = zone;
@@ -299,7 +292,7 @@ function renderHexMap(data) {
     svg.appendChild(poly);
   }
 
-  renderZoneBoundaries(svg, boundarySegments);
+  renderZoneBoundaries(svg, edgeMap);
   renderMeasureOverlay(svg, pointByKey);
   renderLegend(legend, zoneMeta, counts);
   renderInlineEditorStats();
@@ -372,21 +365,19 @@ function showTile(tile, suffix = 'edited') {
   document.querySelector('#selected-tile').innerHTML = `<strong>${meta.icon} ${meta.label}</strong><span>hex (${tile.q}, ${tile.r}) · ${suffix}</span><p>${zoneDescription(tile.zone)}</p>`;
 }
 
-function renderZoneBoundaries(svg, segments) {
-  const rendered = new Set();
-  for (const segment of segments) {
-    const aKey = `${segment.a.x.toFixed(2)},${segment.a.y.toFixed(2)}`;
-    const bKey = `${segment.b.x.toFixed(2)},${segment.b.y.toFixed(2)}`;
-    const segmentKey = [aKey, bKey].sort().join('|');
-    if (rendered.has(segmentKey)) continue;
-    rendered.add(segmentKey);
+function renderZoneBoundaries(svg, edgeMap) {
+  for (const edge of edgeMap.values()) {
+    const uniqueZones = new Set(edge.zones);
+    const isOuterEdge = edge.zones.length === 1;
+    const isZoneBoundary = uniqueZones.size > 1;
+    if (!isOuterEdge && !isZoneBoundary) continue;
+
     const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-    line.setAttribute('x1', segment.a.x.toFixed(2));
-    line.setAttribute('y1', segment.a.y.toFixed(2));
-    line.setAttribute('x2', segment.b.x.toFixed(2));
-    line.setAttribute('y2', segment.b.y.toFixed(2));
-    line.setAttribute('class', 'zone-edge-boundary');
-    line.dataset.zone = segment.zone;
+    line.setAttribute('x1', edge.a.x.toFixed(2));
+    line.setAttribute('y1', edge.a.y.toFixed(2));
+    line.setAttribute('x2', edge.b.x.toFixed(2));
+    line.setAttribute('y2', edge.b.y.toFixed(2));
+    line.setAttribute('class', isOuterEdge ? 'zone-edge-boundary map-outer-boundary' : 'zone-edge-boundary');
     svg.appendChild(line);
   }
 }
