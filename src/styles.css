@@ -256,10 +256,13 @@ body[data-theme="forest"] .map-frame {
 .hex-tile.selected { filter: url(#tileGlow) brightness(1.28); stroke: #ffe08a; stroke-width: 2.4; }
 .zone-restricted { opacity: .76; }
 .selected-card {
-  position:absolute; left:14px; bottom:14px; width:min(320px, calc(100% - 28px));
-  padding: 13px 14px; border-radius: 18px;
+  min-height: 72px;
+  margin: 0 0 12px;
+  padding: 13px 14px;
+  border-radius: 18px;
   border: 1px solid rgba(240,193,90,.35);
-  background: rgba(10, 12, 8, .82); backdrop-filter: blur(8px);
+  background: rgba(10, 12, 8, .82);
+  backdrop-filter: blur(8px);
   color: var(--muted);
 }
 .selected-card strong { display:block; color: var(--text); font-size: 17px; }
