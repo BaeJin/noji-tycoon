@@ -556,7 +556,7 @@ body.editor-mode .hex-tile:hover { stroke: var(--gold); stroke-width: 2.2; filte
   color:#102014;
   font-weight:800;
 }
-.hex-tile { stroke-opacity: .38; }
-.hex-tile.zone-boundary { stroke: rgba(238, 255, 197, .62); stroke-width: 1.65; stroke-opacity: .92; }
-body.editor-mode .hex-tile { stroke-opacity: .5; }
-body.editor-mode .hex-tile.zone-boundary { stroke: rgba(240, 193, 90, .88); stroke-width: 2; }
+.hex-tile { stroke: rgba(205,245,161,.10); stroke-width: .7; stroke-opacity: .38; }
+.zone-edge-boundary { stroke: rgba(238, 255, 197, .72); stroke-width: 1.75; stroke-linecap: round; pointer-events: none; }
+body.editor-mode .hex-tile { stroke: rgba(205,245,161,.16); stroke-width: .75; stroke-opacity: .5; }
+body.editor-mode .zone-edge-boundary { stroke: rgba(240, 193, 90, .92); stroke-width: 2.15; }

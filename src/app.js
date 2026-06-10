@@ -166,12 +166,22 @@ function hexCorners(cx, cy, size) {
   return hexCornersArray(cx, cy, size).map(p => `${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(' ');
 }
 
-function hasDifferentZoneNeighbor(tile) {
-  const neighbors = [[1, 0], [1, -1], [0, -1], [-1, 0], [-1, 1], [0, 1]];
-  return neighbors.some(([dq, dr]) => {
-    const neighbor = tileState.get(tileKey(tile.q + dq, tile.r + dr));
-    return !neighbor || neighbor.zone !== tile.zone;
-  });
+const EDGE_DIRECTIONS = [
+  [1, -1],
+  [0, -1],
+  [-1, 0],
+  [-1, 1],
+  [0, 1],
+  [1, 0]
+];
+
+function boundaryEdgesForTile(tile) {
+  return EDGE_DIRECTIONS
+    .map(([dq, dr], edgeIndex) => {
+      const neighbor = tileState.get(tileKey(tile.q + dq, tile.r + dr));
+      return !neighbor || neighbor.zone !== tile.zone ? edgeIndex : null;
+    })
+    .filter(edgeIndex => edgeIndex !== null);
 }
 
 function render(data) {
@@ -250,6 +260,7 @@ function renderHexMap(data) {
   `;
 
   const pointByKey = new Map();
+  const boundarySegments = [];
   for (const hex of grid) {
     const { x, y } = hexToPoint(hex);
     const q = hex.q;
@@ -265,10 +276,18 @@ function renderHexMap(data) {
     pointByKey.set(k, { x: x + 22, y: y + 22 });
     const meta = zoneMeta[zone] || zoneMeta.wild;
     const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
-    const points = hexCorners(x + 22, y + 22, HEX_SIZE_PX);
+    const cx = x + 22;
+    const cy = y + 22;
+    const corners = hexCornersArray(cx, cy, HEX_SIZE_PX);
+    const points = corners.map(p => `${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(' ');
     poly.setAttribute('points', points);
     poly.setAttribute('fill', meta.color);
-    poly.setAttribute('class', `hex-tile zone-${zone}${hasDifferentZoneNeighbor(tile) ? ' zone-boundary' : ''}`);
+    poly.setAttribute('class', `hex-tile zone-${zone}`);
+    for (const edgeIndex of boundaryEdgesForTile(tile)) {
+      const a = corners[edgeIndex];
+      const b = corners[(edgeIndex + 1) % 6];
+      boundarySegments.push({ a, b, zone });
+    }
     poly.dataset.q = q;
     poly.dataset.r = r;
     poly.dataset.zone = zone;
@@ -278,6 +297,7 @@ function renderHexMap(data) {
     svg.appendChild(poly);
   }
 
+  renderZoneBoundaries(svg, boundarySegments);
   renderMeasureOverlay(svg, pointByKey);
   renderLegend(legend, zoneMeta, counts);
   renderInlineEditorStats();
@@ -348,6 +368,19 @@ function handleTileClick(tile, poly) {
 function showTile(tile, suffix = 'edited') {
   const meta = getZoneMeta()[tile.zone];
   document.querySelector('#selected-tile').innerHTML = `<strong>${meta.icon} ${meta.label}</strong><span>hex (${tile.q}, ${tile.r}) · ${suffix}</span><p>${zoneDescription(tile.zone)}</p>`;
+}
+
+function renderZoneBoundaries(svg, segments) {
+  for (const segment of segments) {
+    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    line.setAttribute('x1', segment.a.x.toFixed(2));
+    line.setAttribute('y1', segment.a.y.toFixed(2));
+    line.setAttribute('x2', segment.b.x.toFixed(2));
+    line.setAttribute('y2', segment.b.y.toFixed(2));
+    line.setAttribute('class', 'zone-edge-boundary');
+    line.dataset.zone = segment.zone;
+    svg.appendChild(line);
+  }
 }
 
 function renderMeasureOverlay(svg, pointByKey) {
