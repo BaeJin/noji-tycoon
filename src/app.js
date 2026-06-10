@@ -5,8 +5,9 @@ const PYEONG_SQM = 3.305785;
 const HEX_SIDE_M = Math.sqrt((2 * PYEONG_SQM) / (3 * Math.sqrt(3)));
 const HEX_WIDTH_M = 2 * HEX_SIDE_M;
 const HEX_HEIGHT_M = Math.sqrt(3) * HEX_SIDE_M;
-const MAP_WIDTH = 24;
-const MAP_HEIGHT = 23;
+const DEFAULT_MAP_WIDTH = 24;
+const DEFAULT_MAP_HEIGHT = 23;
+const TARGET_LAND_PYEONG = 550;
 const HEX_SIZE_PX = 18;
 
 const baseZones = {
@@ -54,6 +55,7 @@ let editorEnabled = false;
 let editorTool = 'inspect';
 let paintZone = 'wild';
 let measurePoints = [];
+let mapSettings = { width: DEFAULT_MAP_WIDTH, height: DEFAULT_MAP_HEIGHT };
 const tileState = new Map();
 const MAP_STORAGE_KEY = 'noji-ingame-map-v1';
 
@@ -91,6 +93,10 @@ function applyTheme(theme) {
   });
 }
 
+function clampMapSize(value) {
+  return Math.max(8, Math.min(80, Number.parseInt(value, 10) || DEFAULT_MAP_WIDTH));
+}
+
 function classifyTile(q, r, width, height) {
   const river = q > width - 5 || (q > width - 8 && r > height - 7);
   if (river) return 'restricted';
@@ -106,11 +112,30 @@ function initTileState() {
   if (tileState.size) return;
   const saved = loadMapFromStorage();
   if (saved) return;
-  for (let r = 0; r < MAP_HEIGHT; r += 1) {
-    for (let q = 0; q < MAP_WIDTH; q += 1) {
-      tileState.set(tileKey(q, r), { q, r, zone: classifyTile(q, r, MAP_WIDTH, MAP_HEIGHT) });
+  resizeMap(DEFAULT_MAP_WIDTH, DEFAULT_MAP_HEIGHT, { preserve: false, save: false });
+}
+
+function resizeMap(width, height, { preserve = true, save = true } = {}) {
+  const next = { width: clampMapSize(width), height: clampMapSize(height) };
+  const previous = new Map(tileState);
+  tileState.clear();
+  for (let r = 0; r < next.height; r += 1) {
+    for (let q = 0; q < next.width; q += 1) {
+      const k = tileKey(q, r);
+      const prior = preserve ? previous.get(k) : null;
+      tileState.set(k, prior ? { ...prior } : { q, r, zone: classifyTile(q, r, next.width, next.height) });
     }
   }
+  mapSettings = next;
+  syncMapSizeInputs();
+  if (save) saveMapToStorage();
+}
+
+function syncMapSizeInputs() {
+  const widthInput = document.querySelector('#map-width-input');
+  const heightInput = document.querySelector('#map-height-input');
+  if (widthInput) widthInput.value = mapSettings.width;
+  if (heightInput) heightInput.value = mapSettings.height;
 }
 
 function axialToMeters(q, r) {
@@ -171,6 +196,9 @@ function setupInlineEditor() {
     });
   });
   document.querySelector('#inline-zone-select').addEventListener('change', event => { paintZone = event.target.value; });
+  document.querySelector('#apply-map-size').addEventListener('click', applyMapSizeFromInputs);
+  document.querySelector('#fit-map-view').addEventListener('click', () => { renderHexMap(projectData); renderInlineEditorStats('fit view'); });
+  syncMapSizeInputs();
   document.querySelector('#export-inline-map').addEventListener('click', exportInlineMap);
   document.querySelector('#save-inline-map').addEventListener('click', () => { saveMapToStorage(); renderInlineEditorStats('saved locally'); });
   document.querySelector('#load-inline-map').addEventListener('click', () => document.querySelector('#inline-map-file').click());
@@ -192,9 +220,9 @@ function renderHexMap(data) {
   const legend = document.querySelector('#zone-legend');
   const zoneMeta = getZoneMeta();
   const Tile = defineHex({ dimensions: HEX_SIZE_PX, orientation: Orientation.FLAT });
-  const grid = new Grid(Tile, rectangle({ width: MAP_WIDTH, height: MAP_HEIGHT }));
+  const grid = new Grid(Tile, rectangle({ width: mapSettings.width, height: mapSettings.height }));
   const counts = {};
-  const minX = -HEX_SIZE_PX, minY = -HEX_SIZE_PX, maxX = MAP_WIDTH * HEX_SIZE_PX * 1.55, maxY = MAP_HEIGHT * HEX_SIZE_PX * 1.78;
+  const minX = -HEX_SIZE_PX, minY = -HEX_SIZE_PX, maxX = mapSettings.width * HEX_SIZE_PX * 1.55, maxY = mapSettings.height * HEX_SIZE_PX * 1.78;
 
   svg.setAttribute('viewBox', `${minX} ${minY} ${maxX} ${maxY}`);
   svg.innerHTML = `
@@ -213,7 +241,7 @@ function renderHexMap(data) {
     const k = tileKey(q, r);
     let tile = tileState.get(k);
     if (!tile) {
-      tile = { q, r, zone: classifyTile(q, r, MAP_WIDTH, MAP_HEIGHT) };
+      tile = { q, r, zone: classifyTile(q, r, mapSettings.width, mapSettings.height) };
       tileState.set(k, tile);
     }
     const zone = tile.zone;
@@ -320,9 +348,12 @@ function renderInlineEditorStats(extra = '') {
   tileState.forEach(tile => { counts[tile.zone] = (counts[tile.zone] || 0) + 1; });
   const zoneMeta = getZoneMeta();
   const total = tileState.size;
+  const delta = total - TARGET_LAND_PYEONG;
+  const landFitText = delta === 0 ? 'target 550평 exact' : `${Math.abs(delta)}평 ${delta > 0 ? '여유' : '부족'}`;
   const measureText = measurePoints.length === 2 ? ` · 측정 ${distanceMeters(measurePoints[0], measurePoints[1]).toFixed(2)}m` : '';
   el.innerHTML = `
-    <span>총 ${total}평 / ${(total * PYEONG_SQM).toFixed(1)}㎡</span>
+    <span>맵 ${mapSettings.width}×${mapSettings.height} = ${total}평 / ${(total * PYEONG_SQM).toFixed(1)}㎡</span>
+    <span>실토지 약 ${TARGET_LAND_PYEONG}평 기준 ${landFitText}</span>
     <span>hex side ${HEX_SIDE_M.toFixed(3)}m · width ${HEX_WIDTH_M.toFixed(3)}m · height ${HEX_HEIGHT_M.toFixed(3)}m${measureText}</span>
     <span>${Object.entries(counts).map(([zone, count]) => `${zoneMeta[zone]?.icon || ''} ${zone}: ${count}`).join(' · ')}</span>
     ${extra ? `<span class="good">${extra}</span>` : ''}
@@ -346,7 +377,7 @@ function buildMapPayload() {
       hexHeightMeters: Number(HEX_HEIGHT_M.toFixed(6)),
       coordinateSystem: 'flat-top axial q,r; distance measurements use center coordinates in meters'
     },
-    grid: { width: MAP_WIDTH, height: MAP_HEIGHT },
+    grid: { width: mapSettings.width, height: mapSettings.height },
     tiles: [...tileState.values()]
   };
 }
@@ -379,17 +410,26 @@ function loadMapFromStorage() {
 function applyMapPayload(payload) {
   if (!payload?.tiles?.length) return false;
   tileState.clear();
-  for (let r = 0; r < MAP_HEIGHT; r += 1) {
-    for (let q = 0; q < MAP_WIDTH; q += 1) {
-      tileState.set(tileKey(q, r), { q, r, zone: classifyTile(q, r, MAP_WIDTH, MAP_HEIGHT) });
-    }
-  }
+  const width = clampMapSize(payload.grid?.width || DEFAULT_MAP_WIDTH);
+  const height = clampMapSize(payload.grid?.height || DEFAULT_MAP_HEIGHT);
+  resizeMap(width, height, { preserve: false, save: false });
   for (const tile of payload.tiles) {
     const k = tileKey(tile.q, tile.r);
     if (tileState.has(k) && baseZones[tile.zone]) tileState.get(k).zone = tile.zone;
   }
+  syncMapSizeInputs();
   return true;
 }
+
+function applyMapSizeFromInputs() {
+  const width = document.querySelector('#map-width-input').value;
+  const height = document.querySelector('#map-height-input').value;
+  resizeMap(width, height, { preserve: true, save: true });
+  measurePoints = [];
+  renderHexMap(projectData);
+  renderInlineEditorStats('map resized');
+}
+
 
 async function importInlineMap(event) {
   const file = event.target.files?.[0];

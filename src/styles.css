@@ -516,3 +516,40 @@ body.editor-mode .hex-tile:hover { stroke: var(--gold); stroke-width: 2.2; filte
   .inline-editor-controls label,
   .inline-editor-controls select { flex: 1 1 auto; }
 }
+.map-settings {
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
+  align-items:center;
+  margin-top:10px;
+  padding-top:10px;
+  border-top:1px solid rgba(255,255,255,.08);
+}
+.map-settings label {
+  display:flex;
+  align-items:center;
+  gap:6px;
+  color:var(--muted);
+  font-size:12px;
+}
+.map-settings input {
+  width:70px;
+  border:1px solid var(--line);
+  border-radius:999px;
+  background:rgba(0,0,0,.24);
+  color:var(--text);
+  padding:7px 9px;
+}
+.map-settings button {
+  border:1px solid var(--line);
+  border-radius:999px;
+  background:rgba(0,0,0,.24);
+  color:var(--text);
+  padding:8px 11px;
+  cursor:pointer;
+}
+.map-settings #apply-map-size {
+  background:var(--gold);
+  color:#102014;
+  font-weight:800;
+}

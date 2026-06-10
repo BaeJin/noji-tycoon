@@ -79,6 +79,12 @@
             </label>
             <button id="save-inline-map">Save Local</button><button id="load-inline-map">Load JSON</button><button id="export-inline-map">Export JSON</button><input id="inline-map-file" type="file" accept="application/json,.json" hidden />
           </div>
+          <div class="map-settings">
+            <label>Width <input id="map-width-input" type="number" min="8" max="80" step="1" /></label>
+            <label>Height <input id="map-height-input" type="number" min="8" max="80" step="1" /></label>
+            <button id="apply-map-size">Apply Size</button>
+            <button id="fit-map-view">Fit View</button>
+          </div>
           <div id="inline-editor-stats" class="inline-editor-stats"></div>
         </div>
         <div class="map-frame">
