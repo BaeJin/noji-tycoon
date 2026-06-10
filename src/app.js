@@ -58,6 +58,8 @@ let brushSize = 1;
 let measurePoints = [];
 let mapZoom = Number.parseFloat(localStorage.getItem('noji-map-zoom') || '1');
 let augmentEnabled = localStorage.getItem('noji-map-augment') === 'true';
+const DEFAULT_OVERLAY_SRC = '/overlays/hachunri-179-2-available-land.png';
+let overlayState = loadOverlayState();
 let mapSettings = { width: DEFAULT_MAP_WIDTH, height: DEFAULT_MAP_HEIGHT };
 const tileState = new Map();
 const MAP_STORAGE_KEY = 'noji-ingame-map-v1';
@@ -74,7 +76,7 @@ async function loadProject() {
   projectData = await res.json();
   setupThemeSwitcher();
   setupMapZoomControls();
-  setupMapAugmentToggle();
+  setupMapAugmentControls();
   setupInlineEditor();
   applyTheme(currentTheme);
   render(projectData);
@@ -225,17 +227,93 @@ function updateMapZoomLabel() {
   if (label) label.textContent = `${Math.round(mapZoom * 100)}%`;
 }
 
-function setupMapAugmentToggle() {
+function loadOverlayState() {
+  try {
+    return {
+      src: localStorage.getItem('noji-overlay-src') || DEFAULT_OVERLAY_SRC,
+      opacity: Number.parseFloat(localStorage.getItem('noji-overlay-opacity') || '0.48'),
+      scale: Number.parseFloat(localStorage.getItem('noji-overlay-scale') || '1')
+    };
+  } catch {
+    return { src: DEFAULT_OVERLAY_SRC, opacity: 0.48, scale: 1 };
+  }
+}
+
+function saveOverlayState() {
+  localStorage.setItem('noji-overlay-src', overlayState.src);
+  localStorage.setItem('noji-overlay-opacity', String(overlayState.opacity));
+  localStorage.setItem('noji-overlay-scale', String(overlayState.scale));
+}
+
+function setupMapAugmentControls() {
   const toggle = document.querySelector('#map-augment-toggle');
   if (!toggle || toggle.dataset.bound) return;
   toggle.dataset.bound = 'true';
+  const opacity = document.querySelector('#overlay-opacity');
+  const scale = document.querySelector('#overlay-scale');
+  const scaleLabel = document.querySelector('#overlay-scale-label');
+  const fileInput = document.querySelector('#overlay-image-file');
   toggle.checked = augmentEnabled;
-  document.body.classList.toggle('map-augment-on', augmentEnabled);
+  opacity.value = Math.round(overlayState.opacity * 100);
+  scale.value = Math.round(overlayState.scale * 100);
+  scaleLabel.textContent = `${Math.round(overlayState.scale * 100)}%`;
+  applyOverlayState();
   toggle.addEventListener('change', () => {
     augmentEnabled = toggle.checked;
     localStorage.setItem('noji-map-augment', String(augmentEnabled));
-    document.body.classList.toggle('map-augment-on', augmentEnabled);
+    applyOverlayState();
   });
+  opacity.addEventListener('input', () => {
+    overlayState.opacity = Number(opacity.value) / 100;
+    saveOverlayState();
+    applyOverlayState();
+  });
+  scale.addEventListener('input', () => {
+    overlayState.scale = Number(scale.value) / 100;
+    scaleLabel.textContent = `${Math.round(overlayState.scale * 100)}%`;
+    saveOverlayState();
+    applyOverlayState();
+  });
+  document.querySelector('#upload-overlay-image').addEventListener('click', () => fileInput.click());
+  fileInput.addEventListener('change', importOverlayImage);
+  document.querySelector('#reset-overlay-image').addEventListener('click', () => {
+    overlayState.src = DEFAULT_OVERLAY_SRC;
+    saveOverlayState();
+    applyOverlayState();
+  });
+  document.querySelector('#delete-overlay-image').addEventListener('click', () => {
+    overlayState.src = '';
+    augmentEnabled = false;
+    toggle.checked = false;
+    localStorage.setItem('noji-map-augment', 'false');
+    saveOverlayState();
+    applyOverlayState();
+  });
+}
+
+async function importOverlayImage(event) {
+  const file = event.target.files?.[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    overlayState.src = String(reader.result);
+    augmentEnabled = true;
+    localStorage.setItem('noji-map-augment', 'true');
+    saveOverlayState();
+    document.querySelector('#map-augment-toggle').checked = true;
+    applyOverlayState();
+  };
+  reader.readAsDataURL(file);
+  event.target.value = '';
+}
+
+function applyOverlayState() {
+  const img = document.querySelector('#parcel-overlay');
+  if (!img) return;
+  document.body.classList.toggle('map-augment-on', augmentEnabled && Boolean(overlayState.src));
+  img.src = overlayState.src || '';
+  img.style.setProperty('--overlay-opacity', String(overlayState.opacity));
+  img.style.setProperty('--overlay-scale', String(overlayState.scale));
 }
 
 function setupInlineEditor() {

@@ -53,7 +53,7 @@
             <strong>Hachunri 179-2</strong>
             <span>1 hex ≈ 1평 · Honeycomb SVG grid</span>
           </div>
-          <div class="map-buttons"><button id="toggle-map-editor" class="primary-map-button">Map Editor</button><button id="map-zoom-out">−</button><button id="map-zoom-reset">100%</button><button id="map-zoom-in">+</button><button id="reset-selection">Reset View</button><label class="augment-toggle"><input id="map-augment-toggle" type="checkbox" /> 지도 증강 <small>80m×80m</small></label></div>
+          <div class="map-buttons"><button id="toggle-map-editor" class="primary-map-button">Map Editor</button><button id="map-zoom-out">−</button><button id="map-zoom-reset">100%</button><button id="map-zoom-in">+</button><button id="reset-selection">Reset View</button><label class="augment-toggle"><input id="map-augment-toggle" type="checkbox" /> 지도 증강 <small>80m×80m</small></label><label class="opacity-control">투명도 <input id="overlay-opacity" type="range" min="0" max="100" value="48" /></label></div>
         </div>
         <div id="inline-editor-panel" class="inline-editor-panel" aria-hidden="true">
           <div class="editor-mode-row">
@@ -91,6 +91,15 @@
             <label>Height <input id="map-height-input" type="number" min="8" max="80" step="1" /></label>
             <button id="apply-map-size">Apply Size</button>
             <button id="fit-map-view">Fit View</button>
+          </div>
+          <div class="overlay-settings">
+            <strong>Augment Image</strong>
+            <button id="upload-overlay-image">삽입/변경</button>
+            <button id="reset-overlay-image">기본 이미지</button>
+            <button id="delete-overlay-image">삭제</button>
+            <label>크기 <input id="overlay-scale" type="range" min="20" max="220" value="100" /></label>
+            <span id="overlay-scale-label">100%</span>
+            <input id="overlay-image-file" type="file" accept="image/*" hidden />
           </div>
           <div id="inline-editor-stats" class="inline-editor-stats"></div>
         </div>
