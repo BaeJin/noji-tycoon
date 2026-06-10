@@ -269,6 +269,7 @@ body[data-theme="forest"] .map-frame {
 .selected-card span { color: var(--gold); font-size:12px; }
 .selected-card p { margin: 6px 0 0; font-size: 13px; }
 .legend { display:flex; flex-wrap:wrap; gap:8px; margin-top: 12px; }
+.legend-top { margin: 0 0 12px; max-height: 88px; overflow:auto; padding: 2px 0 4px; }
 .legend-chip { display:flex; align-items:center; gap:6px; border:1px solid var(--line); border-radius:999px; padding:7px 10px; background: rgba(0,0,0,.2); color:var(--muted); font-size:12px; }
 .legend-chip i { width:13px; height:13px; clip-path: polygon(25% 0%,75% 0%,100% 50%,75% 100%,25% 100%,0 50%); }
 .quest, .object, .action-card, .player {
