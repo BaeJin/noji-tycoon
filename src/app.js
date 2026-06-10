@@ -35,7 +35,7 @@ const themes = {
 };
 
 let projectData;
-let currentTheme = localStorage.getItem('noji-theme') || 'frontier';
+let currentTheme = localStorage.getItem('noji-theme') || 'forest';
 
 function getZoneMeta() {
   const colors = themes[currentTheme]?.colors || themes.frontier.colors;
