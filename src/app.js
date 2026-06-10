@@ -56,6 +56,7 @@ let editorTool = 'inspect';
 let paintZone = 'wild';
 let brushSize = 1;
 let measurePoints = [];
+let mapZoom = Number.parseFloat(localStorage.getItem('noji-map-zoom') || '1');
 let mapSettings = { width: DEFAULT_MAP_WIDTH, height: DEFAULT_MAP_HEIGHT };
 const tileState = new Map();
 const MAP_STORAGE_KEY = 'noji-ingame-map-v1';
@@ -71,6 +72,7 @@ async function loadProject() {
   const res = await fetch('/data/project.json');
   projectData = await res.json();
   setupThemeSwitcher();
+  setupMapZoomControls();
   setupInlineEditor();
   applyTheme(currentTheme);
   render(projectData);
@@ -197,6 +199,30 @@ function render(data) {
   renderPlayers(data.players);
 }
 
+function setupMapZoomControls() {
+  const zoomOut = document.querySelector('#map-zoom-out');
+  const zoomIn = document.querySelector('#map-zoom-in');
+  const zoomReset = document.querySelector('#map-zoom-reset');
+  if (!zoomOut || zoomOut.dataset.bound) return;
+  zoomOut.dataset.bound = 'true';
+  zoomOut.addEventListener('click', () => setMapZoom(mapZoom / 1.2));
+  zoomIn.addEventListener('click', () => setMapZoom(mapZoom * 1.2));
+  zoomReset.addEventListener('click', () => setMapZoom(1));
+  updateMapZoomLabel();
+}
+
+function setMapZoom(next) {
+  mapZoom = Math.max(0.5, Math.min(3, next));
+  localStorage.setItem('noji-map-zoom', String(mapZoom));
+  updateMapZoomLabel();
+  renderHexMap(projectData);
+}
+
+function updateMapZoomLabel() {
+  const label = document.querySelector('#map-zoom-reset');
+  if (label) label.textContent = `${Math.round(mapZoom * 100)}%`;
+}
+
 function setupInlineEditor() {
   const toggle = document.querySelector('#toggle-map-editor');
   if (!toggle || toggle.dataset.bound) return;
@@ -246,8 +272,13 @@ function renderHexMap(data) {
   const grid = new Grid(Tile, rectangle({ width: mapSettings.width, height: mapSettings.height }));
   const counts = {};
   const minX = -HEX_SIZE_PX, minY = -HEX_SIZE_PX, maxX = mapSettings.width * HEX_SIZE_PX * 1.55, maxY = mapSettings.height * HEX_SIZE_PX * 1.78;
+  const viewWidth = maxX - minX;
+  const viewHeight = maxY - minY;
 
-  svg.setAttribute('viewBox', `${minX} ${minY} ${maxX} ${maxY}`);
+  svg.setAttribute('viewBox', `${minX} ${minY} ${viewWidth} ${viewHeight}`);
+  svg.style.width = `${viewWidth * mapZoom}px`;
+  svg.style.height = `${viewHeight * mapZoom}px`;
+  updateMapZoomLabel();
   svg.innerHTML = `
     <defs>
       <filter id="tileGlow" x="-40%" y="-40%" width="180%" height="180%">

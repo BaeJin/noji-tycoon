@@ -563,3 +563,28 @@ body.editor-mode .hex-tile { stroke: rgba(205,245,161,.16); stroke-width: .75; s
 body.editor-mode .zone-edge-boundary { stroke: rgba(240, 193, 90, .95); stroke-width: 2.25; }
 .map-outer-boundary { stroke: rgba(238, 255, 197, .42); stroke-width: 1.35; }
 body.editor-mode .map-outer-boundary { stroke: rgba(238, 255, 197, .55); stroke-width: 1.55; }
+.map-buttons #map-zoom-out,
+.map-buttons #map-zoom-reset,
+.map-buttons #map-zoom-in {
+  min-width: 42px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(0,0,0,.24);
+  color: var(--text);
+  padding: 8px 10px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.map-frame {
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+#hex-svg {
+  width: auto;
+  height: auto;
+  min-width: 100%;
+  min-height: 100%;
+}
+.map-frame::-webkit-scrollbar { width: 10px; height: 10px; }
+.map-frame::-webkit-scrollbar-thumb { background: rgba(184,224,109,.35); border-radius: 999px; }
+.map-frame::-webkit-scrollbar-track { background: rgba(0,0,0,.18); }
