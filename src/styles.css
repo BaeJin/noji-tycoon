@@ -623,3 +623,5 @@ body.editor-mode .map-outer-boundary { stroke: rgba(238, 255, 197, .55); stroke-
 .map-augment-on .parcel-overlay { opacity: .48; }
 .map-augment-on .hex-tile { opacity: .72; }
 .map-augment-on .zone-edge-boundary { stroke: rgba(255,255,255,.86); }
+
+.augment-toggle small { color: var(--muted); font-size: 11px; }
