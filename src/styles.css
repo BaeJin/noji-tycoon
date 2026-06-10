@@ -588,3 +588,38 @@ body.editor-mode .map-outer-boundary { stroke: rgba(238, 255, 197, .55); stroke-
 .map-frame::-webkit-scrollbar { width: 10px; height: 10px; }
 .map-frame::-webkit-scrollbar-thumb { background: rgba(184,224,109,.35); border-radius: 999px; }
 .map-frame::-webkit-scrollbar-track { background: rgba(0,0,0,.18); }
+.augment-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(0,0,0,.24);
+  color: var(--text);
+  padding: 8px 10px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.augment-toggle input { accent-color: var(--gold); }
+.map-canvas-layer {
+  position: relative;
+  min-width: 100%;
+  min-height: 100%;
+}
+.parcel-overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  opacity: 0;
+  pointer-events: none;
+  mix-blend-mode: screen;
+  filter: saturate(1.08) contrast(1.04);
+  transition: opacity .18s ease;
+  z-index: 2;
+}
+#hex-svg { position: relative; z-index: 1; }
+.map-augment-on .parcel-overlay { opacity: .48; }
+.map-augment-on .hex-tile { opacity: .72; }
+.map-augment-on .zone-edge-boundary { stroke: rgba(255,255,255,.86); }

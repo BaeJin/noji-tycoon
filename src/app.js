@@ -57,6 +57,7 @@ let paintZone = 'wild';
 let brushSize = 1;
 let measurePoints = [];
 let mapZoom = Number.parseFloat(localStorage.getItem('noji-map-zoom') || '1');
+let augmentEnabled = localStorage.getItem('noji-map-augment') === 'true';
 let mapSettings = { width: DEFAULT_MAP_WIDTH, height: DEFAULT_MAP_HEIGHT };
 const tileState = new Map();
 const MAP_STORAGE_KEY = 'noji-ingame-map-v1';
@@ -73,6 +74,7 @@ async function loadProject() {
   projectData = await res.json();
   setupThemeSwitcher();
   setupMapZoomControls();
+  setupMapAugmentToggle();
   setupInlineEditor();
   applyTheme(currentTheme);
   render(projectData);
@@ -223,6 +225,19 @@ function updateMapZoomLabel() {
   if (label) label.textContent = `${Math.round(mapZoom * 100)}%`;
 }
 
+function setupMapAugmentToggle() {
+  const toggle = document.querySelector('#map-augment-toggle');
+  if (!toggle || toggle.dataset.bound) return;
+  toggle.dataset.bound = 'true';
+  toggle.checked = augmentEnabled;
+  document.body.classList.toggle('map-augment-on', augmentEnabled);
+  toggle.addEventListener('change', () => {
+    augmentEnabled = toggle.checked;
+    localStorage.setItem('noji-map-augment', String(augmentEnabled));
+    document.body.classList.toggle('map-augment-on', augmentEnabled);
+  });
+}
+
 function setupInlineEditor() {
   const toggle = document.querySelector('#toggle-map-editor');
   if (!toggle || toggle.dataset.bound) return;
@@ -276,8 +291,15 @@ function renderHexMap(data) {
   const viewHeight = maxY - minY;
 
   svg.setAttribute('viewBox', `${minX} ${minY} ${viewWidth} ${viewHeight}`);
-  svg.style.width = `${viewWidth * mapZoom}px`;
-  svg.style.height = `${viewHeight * mapZoom}px`;
+  const renderedWidth = viewWidth * mapZoom;
+  const renderedHeight = viewHeight * mapZoom;
+  svg.style.width = `${renderedWidth}px`;
+  svg.style.height = `${renderedHeight}px`;
+  const canvasLayer = document.querySelector('#map-canvas-layer');
+  if (canvasLayer) {
+    canvasLayer.style.width = `${renderedWidth}px`;
+    canvasLayer.style.height = `${renderedHeight}px`;
+  }
   updateMapZoomLabel();
   svg.innerHTML = `
     <defs>
