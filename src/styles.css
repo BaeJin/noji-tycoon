@@ -668,3 +668,12 @@ body.editor-mode .map-outer-boundary { stroke: rgba(238, 255, 197, .55); stroke-
   inset: auto;
 }
 .map-augment-on .parcel-overlay { opacity: var(--overlay-opacity, .48); }
+.overlay-settings #overlay-offset-x,
+.overlay-settings #overlay-offset-y,
+.overlay-settings #overlay-opacity-editor { width: 110px; accent-color: var(--gold); }
+#overlay-offset-x-label,
+#overlay-offset-y-label,
+#overlay-opacity-label { color: var(--muted); font-size:12px; min-width: 42px; }
+.parcel-overlay {
+  transform: translate(calc(-50% + var(--overlay-offset-x, 0%)), calc(-50% + var(--overlay-offset-y, 0%))) scale(var(--overlay-scale, 1));
+}

@@ -232,10 +232,12 @@ function loadOverlayState() {
     return {
       src: localStorage.getItem('noji-overlay-src') || DEFAULT_OVERLAY_SRC,
       opacity: Number.parseFloat(localStorage.getItem('noji-overlay-opacity') || '0.48'),
-      scale: Number.parseFloat(localStorage.getItem('noji-overlay-scale') || '1')
+      scale: Number.parseFloat(localStorage.getItem('noji-overlay-scale') || '1'),
+      offsetX: Number.parseFloat(localStorage.getItem('noji-overlay-offset-x') || '0'),
+      offsetY: Number.parseFloat(localStorage.getItem('noji-overlay-offset-y') || '0')
     };
   } catch {
-    return { src: DEFAULT_OVERLAY_SRC, opacity: 0.48, scale: 1 };
+    return { src: DEFAULT_OVERLAY_SRC, opacity: 0.48, scale: 1, offsetX: 0, offsetY: 0 };
   }
 }
 
@@ -243,6 +245,8 @@ function saveOverlayState() {
   localStorage.setItem('noji-overlay-src', overlayState.src);
   localStorage.setItem('noji-overlay-opacity', String(overlayState.opacity));
   localStorage.setItem('noji-overlay-scale', String(overlayState.scale));
+  localStorage.setItem('noji-overlay-offset-x', String(overlayState.offsetX));
+  localStorage.setItem('noji-overlay-offset-y', String(overlayState.offsetY));
 }
 
 function setupMapAugmentControls() {
@@ -252,25 +256,54 @@ function setupMapAugmentControls() {
   const opacity = document.querySelector('#overlay-opacity');
   const scale = document.querySelector('#overlay-scale');
   const scaleLabel = document.querySelector('#overlay-scale-label');
+  const offsetX = document.querySelector('#overlay-offset-x');
+  const offsetY = document.querySelector('#overlay-offset-y');
+  const offsetXLabel = document.querySelector('#overlay-offset-x-label');
+  const offsetYLabel = document.querySelector('#overlay-offset-y-label');
+  const editorOpacity = document.querySelector('#overlay-opacity-editor');
+  const opacityLabel = document.querySelector('#overlay-opacity-label');
   const fileInput = document.querySelector('#overlay-image-file');
   toggle.checked = augmentEnabled;
   opacity.value = Math.round(overlayState.opacity * 100);
   scale.value = Math.round(overlayState.scale * 100);
   scaleLabel.textContent = `${Math.round(overlayState.scale * 100)}%`;
+  offsetX.value = Math.round(overlayState.offsetX);
+  offsetY.value = Math.round(overlayState.offsetY);
+  offsetXLabel.textContent = `${Math.round(overlayState.offsetX)}%`;
+  offsetYLabel.textContent = `${Math.round(overlayState.offsetY)}%`;
+  editorOpacity.value = Math.round(overlayState.opacity * 100);
+  opacityLabel.textContent = `${Math.round(overlayState.opacity * 100)}%`;
   applyOverlayState();
   toggle.addEventListener('change', () => {
     augmentEnabled = toggle.checked;
     localStorage.setItem('noji-map-augment', String(augmentEnabled));
     applyOverlayState();
   });
-  opacity.addEventListener('input', () => {
-    overlayState.opacity = Number(opacity.value) / 100;
+  function setOverlayOpacity(percent) {
+    overlayState.opacity = Number(percent) / 100;
+    opacity.value = Math.round(overlayState.opacity * 100);
+    editorOpacity.value = Math.round(overlayState.opacity * 100);
+    opacityLabel.textContent = `${Math.round(overlayState.opacity * 100)}%`;
     saveOverlayState();
     applyOverlayState();
-  });
+  }
+  opacity.addEventListener('input', () => setOverlayOpacity(opacity.value));
+  editorOpacity.addEventListener('input', () => setOverlayOpacity(editorOpacity.value));
   scale.addEventListener('input', () => {
     overlayState.scale = Number(scale.value) / 100;
     scaleLabel.textContent = `${Math.round(overlayState.scale * 100)}%`;
+    saveOverlayState();
+    applyOverlayState();
+  });
+  offsetX.addEventListener('input', () => {
+    overlayState.offsetX = Number(offsetX.value);
+    offsetXLabel.textContent = `${Math.round(overlayState.offsetX)}%`;
+    saveOverlayState();
+    applyOverlayState();
+  });
+  offsetY.addEventListener('input', () => {
+    overlayState.offsetY = Number(offsetY.value);
+    offsetYLabel.textContent = `${Math.round(overlayState.offsetY)}%`;
     saveOverlayState();
     applyOverlayState();
   });
@@ -314,6 +347,8 @@ function applyOverlayState() {
   img.src = overlayState.src || '';
   img.style.setProperty('--overlay-opacity', String(overlayState.opacity));
   img.style.setProperty('--overlay-scale', String(overlayState.scale));
+  img.style.setProperty('--overlay-offset-x', `${overlayState.offsetX}%`);
+  img.style.setProperty('--overlay-offset-y', `${overlayState.offsetY}%`);
 }
 
 function setupInlineEditor() {
