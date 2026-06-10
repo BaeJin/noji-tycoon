@@ -106,6 +106,36 @@ function render(data) {
   renderQuests(data.quests);
   renderObjects(data.objects);
   renderPlayers(data.players);
+  setupEditorOverlay();
+}
+
+function setupEditorOverlay() {
+  const open = document.querySelector('#open-map-editor');
+  const close = document.querySelector('#close-map-editor');
+  const overlay = document.querySelector('#editor-overlay');
+  const frame = document.querySelector('#editor-frame');
+  if (!open || open.dataset.bound) return;
+  open.dataset.bound = 'true';
+  open.addEventListener('click', () => {
+    if (!frame.src) frame.src = frame.dataset.src;
+    overlay.classList.add('open');
+    overlay.setAttribute('aria-hidden', 'false');
+    document.body.classList.add('modal-open');
+  });
+  close.addEventListener('click', closeEditorOverlay);
+  overlay.addEventListener('click', (event) => {
+    if (event.target === overlay) closeEditorOverlay();
+  });
+  window.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && overlay.classList.contains('open')) closeEditorOverlay();
+  });
+}
+
+function closeEditorOverlay() {
+  const overlay = document.querySelector('#editor-overlay');
+  overlay.classList.remove('open');
+  overlay.setAttribute('aria-hidden', 'true');
+  document.body.classList.remove('modal-open');
 }
 
 function renderResourceBar(resources) {

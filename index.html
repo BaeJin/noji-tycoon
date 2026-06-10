@@ -53,7 +53,7 @@
             <strong>Hachunri 179-2</strong>
             <span>1 hex ≈ 1평 · Honeycomb SVG grid</span>
           </div>
-          <div class="map-buttons"><a href="/map-editor.html">Map Editor</a><button id="reset-selection">Reset View</button></div>
+          <div class="map-buttons"><button id="open-map-editor" class="primary-map-button">Map Editor</button><button id="reset-selection">Reset View</button></div>
         </div>
         <div class="map-frame">
           <svg id="hex-svg" role="img" aria-label="Noji hex land map"></svg>
@@ -85,6 +85,22 @@
         <div id="players" class="players"></div>
       </div>
     </section>
+    <div id="editor-overlay" class="editor-overlay" aria-hidden="true">
+      <div class="editor-overlay-window">
+        <div class="editor-overlay-bar">
+          <div>
+            <strong>Map Editor</strong>
+            <span>1 hex = 1평 · 저장/불러오기용 JSON export</span>
+          </div>
+          <div class="editor-overlay-actions">
+            <a href="/map-editor" target="_blank" rel="noreferrer">Open full page</a>
+            <button id="close-map-editor">Close</button>
+          </div>
+        </div>
+        <iframe id="editor-frame" title="Noji Map Editor" data-src="/map-editor"></iframe>
+      </div>
+    </div>
+
   </div>
 
   <script type="module" src="/src/app.js"></script>
