@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Noji Land Builder</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="hero">
+    <div>
+      <p class="eyebrow">Project Noji</p>
+      <h1>Noji Land Builder</h1>
+      <p id="land-summary">Loading...</p>
+    </div>
+    <div class="level-card">
+      <span class="label">LAND LEVEL</span>
+      <strong id="land-level">Lv.?</strong>
+      <p id="land-level-name"></p>
+    </div>
+  </header>
+
+  <main class="layout">
+    <section class="panel map-panel">
+      <div class="section-title">
+        <h2>Hex Land Map</h2>
+        <span>concept map · 1 hex ≈ 1평</span>
+      </div>
+      <div id="hex-map" class="hex-map" aria-label="conceptual hex map"></div>
+      <div id="zone-legend" class="legend"></div>
+    </section>
+
+    <section class="panel">
+      <div class="section-title"><h2>Tech Tree</h2><span>level unlocks</span></div>
+      <div id="levels" class="levels"></div>
+    </section>
+
+    <section class="panel">
+      <div class="section-title"><h2>Actions</h2><span>what changes the land</span></div>
+      <div id="actions" class="cards"></div>
+    </section>
+
+    <section class="panel">
+      <div class="section-title"><h2>Quests</h2><span>assigned missions</span></div>
+      <div id="quests" class="cards"></div>
+    </section>
+
+    <section class="panel">
+      <div class="section-title"><h2>Objects & Resources</h2><span>owned / locked</span></div>
+      <div id="objects" class="objects"></div>
+    </section>
+
+    <section class="panel">
+      <div class="section-title"><h2>Players</h2><span>roles</span></div>
+      <div id="players" class="players"></div>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>

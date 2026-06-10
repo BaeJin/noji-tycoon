@@ -1,0 +1,149 @@
+{
+  "land": {
+    "id": "hachunri-179-2",
+    "name": "Noji 179-2",
+    "address": "경기 가평군 청평면 하천리 179-2",
+    "areaSqm": 1818,
+    "areaPyeongApprox": 550,
+    "level": 0,
+    "levelName": "미개척 임야",
+    "nextLevelGoal": "조사 완료지로 업그레이드",
+    "summary": "가평 임야를 조사, 정비, 인프라 확보, 체류/수익화 공간으로 성장시키는 프로젝트"
+  },
+  "resources": [
+    { "id": "budget", "name": "예산", "icon": "💰", "amount": "미정", "status": "needed" },
+    { "id": "time", "name": "시간", "icon": "⏱️", "amount": "주말 중심", "status": "available" },
+    { "id": "people", "name": "도움 인력", "icon": "👷", "amount": "미정", "status": "needed" },
+    { "id": "documents", "name": "기준 문서", "icon": "📄", "amount": "등기부/토지이용계획 보유", "status": "available" }
+  ],
+  "levels": [
+    {
+      "level": 0,
+      "name": "미개척 임야",
+      "description": "문서와 아이디어만 있는 시작 상태",
+      "unlocks": ["기준자료 정리", "현장 방문 계획", "군청 사전상담 준비"]
+    },
+    {
+      "level": 1,
+      "name": "조사 완료지",
+      "description": "경계, 규제, 접근성, 저촉 범위를 파악한 상태",
+      "unlocks": ["구역 계획", "수풀 정리", "작업 동선 설계"]
+    },
+    {
+      "level": 2,
+      "name": "접근 가능한 땅",
+      "description": "진입과 기본 작업이 가능한 상태",
+      "unlocks": ["임시 주차", "작업 구역 확보", "기초 인프라 검토"]
+    },
+    {
+      "level": 3,
+      "name": "머물 수 있는 땅",
+      "description": "물, 전기, 화장실, 쉼터 등 체류 기반이 생긴 상태",
+      "unlocks": ["캠핑존", "쉼터", "데크", "가족 모임"]
+    },
+    {
+      "level": 4,
+      "name": "사용 가능한 땅",
+      "description": "반복 사용 가능한 시설과 운영 루틴이 있는 상태",
+      "unlocks": ["농막 후보", "화로", "텃밭", "작은 행사"]
+    },
+    {
+      "level": 5,
+      "name": "수익화 가능한 땅",
+      "description": "체험, 임대, 촬영, 워크숍 등 가치 창출이 가능한 상태",
+      "unlocks": ["프라이빗 캠핑", "촬영지 대여", "워크숍", "장기 사업 검토"]
+    }
+  ],
+  "zones": [
+    { "id": "wild_a", "name": "자연 보존 구역", "type": "wild", "hexCount": 160, "status": "locked", "description": "현 상태 유지 또는 최소 개입 후보" },
+    { "id": "access_a", "name": "진입/동선 후보", "type": "access", "hexCount": 50, "status": "needs_survey", "description": "차량/사람 이동 경로 후보" },
+    { "id": "camp_a", "name": "캠핑 후보지", "type": "camp", "hexCount": 80, "status": "locked", "description": "정리 후 체류 공간 후보" },
+    { "id": "utility_a", "name": "기반시설 후보지", "type": "utility", "hexCount": 30, "status": "locked", "description": "물, 전기, 창고, 화장실 후보" },
+    { "id": "restricted_a", "name": "제약 확인 필요 구역", "type": "restricted", "hexCount": 70, "status": "blocked", "description": "하천/도로 저촉 여부 확인 전까지 제한" }
+  ],
+  "objects": [
+    { "id": "land_registry", "name": "토지등기부등본", "kind": "document", "status": "owned", "zoneId": null, "unlockedAtLevel": 0 },
+    { "id": "land_use_plan", "name": "토지이용계획", "kind": "document", "status": "owned", "zoneId": null, "unlockedAtLevel": 0 },
+    { "id": "boundary_markers", "name": "경계 말뚝", "kind": "map_object", "status": "locked", "zoneId": null, "unlockedAtLevel": 1 },
+    { "id": "parking_space", "name": "임시 주차공간", "kind": "placeable", "status": "locked", "zoneId": "access_a", "unlockedAtLevel": 2 },
+    { "id": "water_tank", "name": "물탱크", "kind": "utility", "status": "locked", "zoneId": "utility_a", "unlockedAtLevel": 3 },
+    { "id": "fire_pit", "name": "화로", "kind": "placeable", "status": "locked", "zoneId": "camp_a", "unlockedAtLevel": 4 }
+  ],
+  "actions": [
+    {
+      "id": "organize_documents",
+      "name": "기준자료 정리",
+      "category": "legal",
+      "status": "available",
+      "requires": ["land_registry", "land_use_plan"],
+      "outputs": ["조사 준비 완료"],
+      "levelRequired": 0,
+      "nextAction": "county_consulting"
+    },
+    {
+      "id": "county_consulting",
+      "name": "가평군청 사전상담",
+      "category": "legal",
+      "status": "available",
+      "requires": ["land_use_plan"],
+      "outputs": ["인허가 가능성", "제약조건 목록"],
+      "levelRequired": 0,
+      "nextAction": "boundary_survey"
+    },
+    {
+      "id": "boundary_survey",
+      "name": "경계측량",
+      "category": "survey",
+      "status": "locked",
+      "requires": ["예산", "현장 입회"],
+      "outputs": ["경계 말뚝", "실사용 가능 구역"],
+      "levelRequired": 1,
+      "nextAction": "zone_planning"
+    },
+    {
+      "id": "zone_planning",
+      "name": "구역 설계",
+      "category": "planning",
+      "status": "locked",
+      "requires": ["경계측량", "제약조건 목록"],
+      "outputs": ["zone map", "object placement rules"],
+      "levelRequired": 1,
+      "nextAction": "clear_brush"
+    },
+    {
+      "id": "clear_brush",
+      "name": "수풀 정리",
+      "category": "land_shaping",
+      "status": "locked",
+      "requires": ["작업 구역", "장비", "인력"],
+      "outputs": ["작업 가능 구역", "위험요소 감소"],
+      "levelRequired": 2,
+      "nextAction": "basic_utility_plan"
+    }
+  ],
+  "quests": [
+    {
+      "id": "q_001",
+      "title": "공통 기준자료 위치 확인",
+      "actionId": "organize_documents",
+      "assignee": "Jinbae",
+      "status": "generated",
+      "due": null,
+      "notes": "00_common 폴더의 등기부/토지이용계획을 대시보드 기준자료로 연결"
+    },
+    {
+      "id": "q_002",
+      "title": "가평군청 상담 질문지 만들기",
+      "actionId": "county_consulting",
+      "assignee": "미정",
+      "status": "generated",
+      "due": null,
+      "notes": "산지전용, 하천/도로 저촉, 농막/캠핑 가능성 질문 정리"
+    }
+  ],
+  "players": [
+    { "id": "jinbae", "name": "Jinbae", "role": "owner/planner", "status": "active" },
+    { "id": "family", "name": "가족", "role": "decision/support", "status": "invited_later" },
+    { "id": "friends", "name": "친구/동료", "role": "support/ideas", "status": "invited_later" }
+  ]
+}
