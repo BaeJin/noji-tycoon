@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Noji Map Editor</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Gowun+Dodum&family=Orbitron:wght@600;800&display=swap" rel="stylesheet">
+</head>
+<body class="editor-body" data-theme="forest">
+  <div id="editor-app">
+    <header class="editor-topbar">
+      <div>
+        <p class="label">PROJECT NOJI · MAP EDITOR</p>
+        <h1>Hachunri Hex Survey</h1>
+        <p class="editor-subtitle">1 hex = 1평 = 3.305785㎡. 실제 거리/면적 기준으로 하천리 179-2를 모델링하는 편집기.</p>
+      </div>
+      <a class="back-link" href="/">← Tycoon Dashboard</a>
+    </header>
+
+    <main class="editor-shell">
+      <aside class="editor-sidebar">
+        <section class="panel">
+          <div class="panel-title"><h3>Scale</h3><span>fixed real-world unit</span></div>
+          <dl class="scale-facts">
+            <div><dt>Hex area</dt><dd id="fact-area">-</dd></div>
+            <div><dt>Side length</dt><dd id="fact-side">-</dd></div>
+            <div><dt>Point-to-point</dt><dd id="fact-width">-</dd></div>
+            <div><dt>Flat-to-flat</dt><dd id="fact-height">-</dd></div>
+          </dl>
+        </section>
+
+        <section class="panel">
+          <div class="panel-title"><h3>Tools</h3><span>edit mode</span></div>
+          <div class="tool-buttons">
+            <button data-tool="paint" class="active">Paint Zone</button>
+            <button data-tool="measure">Measure m</button>
+            <button data-tool="erase">Erase</button>
+          </div>
+          <label class="field">
+            Zone
+            <select id="zone-select">
+              <option value="wild">Wild / 자연</option>
+              <option value="access">Access / 동선</option>
+              <option value="parking">Parking / 주차</option>
+              <option value="camp">Camp / 캠핑</option>
+              <option value="utility">Utility / 기반시설</option>
+              <option value="garden">Garden / 텃밭</option>
+              <option value="rest">Rest / 쉼터</option>
+              <option value="restricted">Restricted / 제한</option>
+            </select>
+          </label>
+          <div class="tool-buttons compact">
+            <button id="clear-map">Clear</button>
+            <button id="export-map">Export JSON</button>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-title"><h3>Selection</h3><span>live stats</span></div>
+          <div id="editor-stats" class="editor-stats"></div>
+        </section>
+      </aside>
+
+      <section class="editor-stage">
+        <div class="editor-toolbar">
+          <div>
+            <strong>Hex parcel canvas</strong>
+            <span>드래그로 이동 · 휠로 확대/축소 · 클릭으로 편집/측정</span>
+          </div>
+          <div class="zoom-controls">
+            <button id="zoom-out">−</button>
+            <button id="zoom-reset">100%</button>
+            <button id="zoom-in">+</button>
+          </div>
+        </div>
+        <div id="editor-canvas-wrap" class="editor-canvas-wrap">
+          <svg id="editor-svg" aria-label="1 pyeong hex map editor"></svg>
+          <div id="measure-readout" class="measure-readout">측정 모드에서 두 hex를 선택하면 거리가 표시됨.</div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script type="module" src="/src/map-editor.js"></script>
+</body>
+</html>
