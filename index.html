@@ -53,7 +53,33 @@
             <strong>Hachunri 179-2</strong>
             <span>1 hex ≈ 1평 · Honeycomb SVG grid</span>
           </div>
-          <div class="map-buttons"><button id="open-map-editor" class="primary-map-button">Map Editor</button><button id="reset-selection">Reset View</button></div>
+          <div class="map-buttons"><button id="toggle-map-editor" class="primary-map-button">Map Editor</button><button id="reset-selection">Reset View</button></div>
+        </div>
+        <div id="inline-editor-panel" class="inline-editor-panel" aria-hidden="true">
+          <div class="editor-mode-row">
+            <strong>In-game Map Editor</strong>
+            <span>1 hex = 1평 · 같은 맵 상태에서 편집</span>
+          </div>
+          <div class="inline-editor-controls">
+            <button data-editor-tool="inspect" class="active">Inspect</button>
+            <button data-editor-tool="paint">Paint</button>
+            <button data-editor-tool="measure">Measure m</button>
+            <button data-editor-tool="erase">Erase</button>
+            <label>Zone
+              <select id="inline-zone-select">
+                <option value="wild">Wild / 자연</option>
+                <option value="access">Access / 동선</option>
+                <option value="parking">Parking / 주차</option>
+                <option value="camp">Camp / 캠핑</option>
+                <option value="utility">Utility / 기반시설</option>
+                <option value="garden">Garden / 텃밭</option>
+                <option value="rest">Rest / 쉼터</option>
+                <option value="restricted">Restricted / 제한</option>
+              </select>
+            </label>
+            <button id="save-inline-map">Save Local</button><button id="load-inline-map">Load JSON</button><button id="export-inline-map">Export JSON</button><input id="inline-map-file" type="file" accept="application/json,.json" hidden />
+          </div>
+          <div id="inline-editor-stats" class="inline-editor-stats"></div>
         </div>
         <div class="map-frame">
           <svg id="hex-svg" role="img" aria-label="Noji hex land map"></svg>
@@ -85,22 +111,6 @@
         <div id="players" class="players"></div>
       </div>
     </section>
-    <div id="editor-overlay" class="editor-overlay" aria-hidden="true">
-      <div class="editor-overlay-window">
-        <div class="editor-overlay-bar">
-          <div>
-            <strong>Map Editor</strong>
-            <span>1 hex = 1평 · 저장/불러오기용 JSON export</span>
-          </div>
-          <div class="editor-overlay-actions">
-            <a href="/map-editor" target="_blank" rel="noreferrer">Open full page</a>
-            <button id="close-map-editor">Close</button>
-          </div>
-        </div>
-        <iframe id="editor-frame" title="Noji Map Editor" data-src="/map-editor"></iframe>
-      </div>
-    </div>
-
   </div>
 
   <script type="module" src="/src/app.js"></script>

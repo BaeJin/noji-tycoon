@@ -1,9 +1,18 @@
 import './styles.css';
 import { defineHex, Grid, rectangle, hexToPoint, Orientation } from 'honeycomb-grid';
 
+const PYEONG_SQM = 3.305785;
+const HEX_SIDE_M = Math.sqrt((2 * PYEONG_SQM) / (3 * Math.sqrt(3)));
+const HEX_WIDTH_M = 2 * HEX_SIDE_M;
+const HEX_HEIGHT_M = Math.sqrt(3) * HEX_SIDE_M;
+const MAP_WIDTH = 24;
+const MAP_HEIGHT = 23;
+const HEX_SIZE_PX = 18;
+
 const baseZones = {
   wild: { label: 'Wild Forest', icon: '🌲' },
   access: { label: 'Access Road', icon: '🛤️' },
+  parking: { label: 'Parking', icon: '🚙' },
   camp: { label: 'Camp Field', icon: '⛺' },
   utility: { label: 'Utility Yard', icon: '⚙️' },
   restricted: { label: 'Restricted', icon: '⚠️' },
@@ -14,43 +23,52 @@ const baseZones = {
 const themes = {
   frontier: {
     label: 'Frontier',
-    colors: { wild: '#315b38', access: '#8c6a42', camp: '#3e8f66', utility: '#3f76a8', restricted: '#7b3d37', garden: '#6d8c3f', rest: '#b28b45' }
+    colors: { wild: '#315b38', access: '#8c6a42', parking: '#6f6557', camp: '#3e8f66', utility: '#3f76a8', restricted: '#7b3d37', garden: '#6d8c3f', rest: '#b28b45' }
   },
   civilization: {
     label: 'Civilization',
-    colors: { wild: '#6f8b4d', access: '#c79755', camp: '#77a85c', utility: '#7890a8', restricted: '#9b5b4a', garden: '#9bae54', rest: '#d2a34d' }
+    colors: { wild: '#6f8b4d', access: '#c79755', parking: '#a89674', camp: '#77a85c', utility: '#7890a8', restricted: '#9b5b4a', garden: '#9bae54', rest: '#d2a34d' }
   },
   clan: {
     label: 'Clan Builder',
-    colors: { wild: '#4fa451', access: '#d99244', camp: '#49b87b', utility: '#4aa6d9', restricted: '#d65345', garden: '#96c93d', rest: '#f2b84b' }
+    colors: { wild: '#4fa451', access: '#d99244', parking: '#9e8e6a', camp: '#49b87b', utility: '#4aa6d9', restricted: '#d65345', garden: '#96c93d', rest: '#f2b84b' }
   },
   blueprint: {
     label: 'Blueprint',
-    colors: { wild: '#1c6c87', access: '#4d87a8', camp: '#2f9ba8', utility: '#79c7dd', restricted: '#8b5966', garden: '#58a9a0', rest: '#d0b15a' }
+    colors: { wild: '#1c6c87', access: '#4d87a8', parking: '#7993a5', camp: '#2f9ba8', utility: '#79c7dd', restricted: '#8b5966', garden: '#58a9a0', rest: '#d0b15a' }
   },
   forest: {
     label: 'Forest Night',
-    colors: { wild: '#1f4b35', access: '#60472e', camp: '#2f6c4e', utility: '#315b72', restricted: '#5a2c32', garden: '#4b6832', rest: '#8c7438' }
+    colors: { wild: '#1f4b35', access: '#60472e', parking: '#6a6250', camp: '#2f6c4e', utility: '#315b72', restricted: '#5a2c32', garden: '#4b6832', rest: '#8c7438' }
   }
 };
-
-let projectData;
-let currentTheme = localStorage.getItem('noji-theme') || 'forest';
-
-function getZoneMeta() {
-  const colors = themes[currentTheme]?.colors || themes.frontier.colors;
-  return Object.fromEntries(Object.entries(baseZones).map(([key, value]) => [key, { ...value, color: colors[key] }]));
-}
 
 const statusTone = {
   available: 'good', owned: 'good', generated: 'good', active: 'good',
   locked: 'muted', needs_survey: 'warn', blocked: 'bad', invited_later: 'muted'
 };
 
+let projectData;
+let currentTheme = localStorage.getItem('noji-theme') || 'forest';
+let editorEnabled = false;
+let editorTool = 'inspect';
+let paintZone = 'wild';
+let measurePoints = [];
+const tileState = new Map();
+const MAP_STORAGE_KEY = 'noji-ingame-map-v1';
+
+function getZoneMeta() {
+  const colors = themes[currentTheme]?.colors || themes.frontier.colors;
+  return Object.fromEntries(Object.entries(baseZones).map(([key, value]) => [key, { ...value, color: colors[key] }]));
+}
+
+function tileKey(q, r) { return `${q},${r}`; }
+
 async function loadProject() {
   const res = await fetch('/data/project.json');
   projectData = await res.json();
   setupThemeSwitcher();
+  setupInlineEditor();
   applyTheme(currentTheme);
   render(projectData);
 }
@@ -76,12 +94,36 @@ function applyTheme(theme) {
 function classifyTile(q, r, width, height) {
   const river = q > width - 5 || (q > width - 8 && r > height - 7);
   if (river) return 'restricted';
-  if (r > height - 5 && q < width - 4) return 'access';
+  if (r > height - 5 && q < width - 4) return q < 7 ? 'parking' : 'access';
   if (q > 13 && r < 9) return 'camp';
   if (q > 16 && r >= 9 && r < 15) return 'utility';
   if (q > 7 && q < 14 && r > 8 && r < 17) return 'garden';
   if (q > 4 && q < 11 && r < 8) return 'rest';
   return 'wild';
+}
+
+function initTileState() {
+  if (tileState.size) return;
+  const saved = loadMapFromStorage();
+  if (saved) return;
+  for (let r = 0; r < MAP_HEIGHT; r += 1) {
+    for (let q = 0; q < MAP_WIDTH; q += 1) {
+      tileState.set(tileKey(q, r), { q, r, zone: classifyTile(q, r, MAP_WIDTH, MAP_HEIGHT) });
+    }
+  }
+}
+
+function axialToMeters(q, r) {
+  return {
+    x: HEX_SIDE_M * 1.5 * q,
+    y: HEX_SIDE_M * Math.sqrt(3) * (r + q / 2)
+  };
+}
+
+function distanceMeters(a, b) {
+  const am = axialToMeters(a.q, a.r);
+  const bm = axialToMeters(b.q, b.r);
+  return Math.hypot(am.x - bm.x, am.y - bm.y);
 }
 
 function hexCorners(cx, cy, size) {
@@ -106,36 +148,33 @@ function render(data) {
   renderQuests(data.quests);
   renderObjects(data.objects);
   renderPlayers(data.players);
-  setupEditorOverlay();
 }
 
-function setupEditorOverlay() {
-  const open = document.querySelector('#open-map-editor');
-  const close = document.querySelector('#close-map-editor');
-  const overlay = document.querySelector('#editor-overlay');
-  const frame = document.querySelector('#editor-frame');
-  if (!open || open.dataset.bound) return;
-  open.dataset.bound = 'true';
-  open.addEventListener('click', () => {
-    if (!frame.src) frame.src = frame.dataset.src;
-    overlay.classList.add('open');
-    overlay.setAttribute('aria-hidden', 'false');
-    document.body.classList.add('modal-open');
+function setupInlineEditor() {
+  const toggle = document.querySelector('#toggle-map-editor');
+  if (!toggle || toggle.dataset.bound) return;
+  toggle.dataset.bound = 'true';
+  toggle.addEventListener('click', () => {
+    editorEnabled = !editorEnabled;
+    measurePoints = [];
+    document.body.classList.toggle('editor-mode', editorEnabled);
+    document.querySelector('#inline-editor-panel').setAttribute('aria-hidden', String(!editorEnabled));
+    toggle.textContent = editorEnabled ? 'Close Editor' : 'Map Editor';
+    renderHexMap(projectData);
   });
-  close.addEventListener('click', closeEditorOverlay);
-  overlay.addEventListener('click', (event) => {
-    if (event.target === overlay) closeEditorOverlay();
+  document.querySelectorAll('[data-editor-tool]').forEach(button => {
+    button.addEventListener('click', () => {
+      editorTool = button.dataset.editorTool;
+      measurePoints = [];
+      document.querySelectorAll('[data-editor-tool]').forEach(b => b.classList.toggle('active', b.dataset.editorTool === editorTool));
+      renderHexMap(projectData);
+    });
   });
-  window.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape' && overlay.classList.contains('open')) closeEditorOverlay();
-  });
-}
-
-function closeEditorOverlay() {
-  const overlay = document.querySelector('#editor-overlay');
-  overlay.classList.remove('open');
-  overlay.setAttribute('aria-hidden', 'true');
-  document.body.classList.remove('modal-open');
+  document.querySelector('#inline-zone-select').addEventListener('change', event => { paintZone = event.target.value; });
+  document.querySelector('#export-inline-map').addEventListener('click', exportInlineMap);
+  document.querySelector('#save-inline-map').addEventListener('click', () => { saveMapToStorage(); renderInlineEditorStats('saved locally'); });
+  document.querySelector('#load-inline-map').addEventListener('click', () => document.querySelector('#inline-map-file').click());
+  document.querySelector('#inline-map-file').addEventListener('change', importInlineMap);
 }
 
 function renderResourceBar(resources) {
@@ -147,17 +186,15 @@ function renderResourceBar(resources) {
 }
 
 function renderHexMap(data) {
+  initTileState();
   const svg = document.querySelector('#hex-svg');
   const selected = document.querySelector('#selected-tile');
   const legend = document.querySelector('#zone-legend');
   const zoneMeta = getZoneMeta();
-  const size = 18;
-  const width = 24;
-  const height = 23;
-  const Tile = defineHex({ dimensions: size, orientation: Orientation.FLAT });
-  const grid = new Grid(Tile, rectangle({ width, height }));
+  const Tile = defineHex({ dimensions: HEX_SIZE_PX, orientation: Orientation.FLAT });
+  const grid = new Grid(Tile, rectangle({ width: MAP_WIDTH, height: MAP_HEIGHT }));
   const counts = {};
-  const minX = -size, minY = -size, maxX = width * size * 1.55, maxY = height * size * 1.78;
+  const minX = -HEX_SIZE_PX, minY = -HEX_SIZE_PX, maxX = MAP_WIDTH * HEX_SIZE_PX * 1.55, maxY = MAP_HEIGHT * HEX_SIZE_PX * 1.78;
 
   svg.setAttribute('viewBox', `${minX} ${minY} ${maxX} ${maxY}`);
   svg.innerHTML = `
@@ -165,49 +202,213 @@ function renderHexMap(data) {
       <filter id="tileGlow" x="-40%" y="-40%" width="180%" height="180%">
         <feDropShadow dx="0" dy="0" stdDeviation="2" flood-color="#e9c46a" flood-opacity="0.7"/>
       </filter>
-      <linearGradient id="fog" x1="0" y1="0" x2="1" y2="1">
-        <stop offset="0" stop-color="#ffffff" stop-opacity="0.12"/>
-        <stop offset="1" stop-color="#000000" stop-opacity="0.18"/>
-      </linearGradient>
     </defs>
   `;
 
+  const pointByKey = new Map();
   for (const hex of grid) {
     const { x, y } = hexToPoint(hex);
     const q = hex.q;
     const r = hex.r;
-    const zone = classifyTile(q, r, width, height);
+    const k = tileKey(q, r);
+    const tile = tileState.get(k);
+    const zone = tile.zone;
     counts[zone] = (counts[zone] || 0) + 1;
+    pointByKey.set(k, { x: x + 22, y: y + 22 });
     const meta = zoneMeta[zone];
     const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
-    poly.setAttribute('points', hexCorners(x + 22, y + 22, size));
+    poly.setAttribute('points', hexCorners(x + 22, y + 22, HEX_SIZE_PX));
     poly.setAttribute('fill', meta.color);
     poly.setAttribute('class', `hex-tile zone-${zone}`);
     poly.dataset.q = q;
     poly.dataset.r = r;
     poly.dataset.zone = zone;
-    poly.addEventListener('click', () => {
-      document.querySelectorAll('.hex-tile.selected').forEach(el => el.classList.remove('selected'));
-      poly.classList.add('selected');
-      selected.innerHTML = `<strong>${meta.icon} ${meta.label}</strong><span>hex (${q}, ${r})</span><p>${zoneDescription(zone)}</p>`;
-    });
+    poly.addEventListener('click', () => handleTileClick(tile, poly));
     svg.appendChild(poly);
   }
 
+  renderMeasureOverlay(svg, pointByKey);
+  renderLegend(legend, zoneMeta, counts);
+  renderInlineEditorStats();
+
+  document.querySelector('#reset-selection').onclick = () => {
+    measurePoints = [];
+    document.querySelectorAll('.hex-tile.selected').forEach(el => el.classList.remove('selected'));
+    selected.textContent = editorEnabled ? editorHelpText() : '타일을 선택해봐.';
+    renderHexMap(data);
+  };
+}
+
+function handleTileClick(tile, poly) {
+  const selected = document.querySelector('#selected-tile');
+  const zoneMeta = getZoneMeta();
+  if (editorEnabled && editorTool === 'paint') {
+    tile.zone = paintZone;
+    saveMapToStorage();
+    renderHexMap(projectData);
+    showTile(tile);
+    return;
+  }
+  if (editorEnabled && editorTool === 'erase') {
+    tile.zone = 'wild';
+    saveMapToStorage();
+    renderHexMap(projectData);
+    showTile(tile);
+    return;
+  }
+  if (editorEnabled && editorTool === 'measure') {
+    measurePoints.push({ q: tile.q, r: tile.r });
+    if (measurePoints.length > 2) measurePoints = [measurePoints.at(-1)];
+    renderHexMap(projectData);
+    if (measurePoints.length === 1) {
+      selected.innerHTML = `<strong>📏 Measure</strong><span>start hex (${tile.q}, ${tile.r})</span><p>끝 hex를 선택해라.</p>`;
+    } else {
+      const d = distanceMeters(measurePoints[0], measurePoints[1]);
+      selected.innerHTML = `<strong>📏 ${d.toFixed(2)}m</strong><span>center-to-center</span><p>hex (${measurePoints[0].q}, ${measurePoints[0].r}) → (${measurePoints[1].q}, ${measurePoints[1].r})</p>`;
+    }
+    return;
+  }
+  document.querySelectorAll('.hex-tile.selected').forEach(el => el.classList.remove('selected'));
+  poly.classList.add('selected');
+  const meta = zoneMeta[tile.zone];
+  selected.innerHTML = `<strong>${meta.icon} ${meta.label}</strong><span>hex (${tile.q}, ${tile.r}) · 1평 · ${PYEONG_SQM.toFixed(3)}㎡</span><p>${zoneDescription(tile.zone)}</p>`;
+}
+
+function showTile(tile) {
+  const meta = getZoneMeta()[tile.zone];
+  document.querySelector('#selected-tile').innerHTML = `<strong>${meta.icon} ${meta.label}</strong><span>hex (${tile.q}, ${tile.r}) · edited</span><p>${zoneDescription(tile.zone)}</p>`;
+}
+
+function renderMeasureOverlay(svg, pointByKey) {
+  if (measurePoints.length === 0) return;
+  for (const p of measurePoints) {
+    const pt = pointByKey.get(tileKey(p.q, p.r));
+    if (!pt) continue;
+    const c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    c.setAttribute('cx', pt.x);
+    c.setAttribute('cy', pt.y);
+    c.setAttribute('r', HEX_SIZE_PX * 0.34);
+    c.setAttribute('class', 'inline-measure-point');
+    svg.appendChild(c);
+  }
+  if (measurePoints.length !== 2) return;
+  const a = pointByKey.get(tileKey(measurePoints[0].q, measurePoints[0].r));
+  const b = pointByKey.get(tileKey(measurePoints[1].q, measurePoints[1].r));
+  const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+  line.setAttribute('x1', a.x);
+  line.setAttribute('y1', a.y);
+  line.setAttribute('x2', b.x);
+  line.setAttribute('y2', b.y);
+  line.setAttribute('class', 'inline-measure-line');
+  svg.appendChild(line);
+}
+
+function renderLegend(legend, zoneMeta, counts) {
   legend.innerHTML = Object.entries(zoneMeta).filter(([key]) => counts[key]).map(([key, meta]) => `
     <span class="legend-chip"><i style="background:${meta.color}"></i>${meta.icon} ${meta.label} <b>${counts[key]}</b></span>
   `).join('');
+}
 
-  document.querySelector('#reset-selection').onclick = () => {
-    document.querySelectorAll('.hex-tile.selected').forEach(el => el.classList.remove('selected'));
-    selected.textContent = '타일을 선택해봐.';
+function renderInlineEditorStats(extra = '') {
+  const el = document.querySelector('#inline-editor-stats');
+  if (!el) return;
+  const counts = {};
+  tileState.forEach(tile => { counts[tile.zone] = (counts[tile.zone] || 0) + 1; });
+  const zoneMeta = getZoneMeta();
+  const total = tileState.size;
+  const measureText = measurePoints.length === 2 ? ` · 측정 ${distanceMeters(measurePoints[0], measurePoints[1]).toFixed(2)}m` : '';
+  el.innerHTML = `
+    <span>총 ${total}평 / ${(total * PYEONG_SQM).toFixed(1)}㎡</span>
+    <span>hex side ${HEX_SIDE_M.toFixed(3)}m · width ${HEX_WIDTH_M.toFixed(3)}m · height ${HEX_HEIGHT_M.toFixed(3)}m${measureText}</span>
+    <span>${Object.entries(counts).map(([zone, count]) => `${zoneMeta[zone]?.icon || ''} ${zone}: ${count}`).join(' · ')}</span>
+    ${extra ? `<span class="good">${extra}</span>` : ''}
+  `;
+}
+
+function editorHelpText() {
+  if (editorTool === 'paint') return `Paint mode: ${paintZone} zone으로 칠하는 중.`;
+  if (editorTool === 'erase') return 'Erase mode: 클릭한 타일을 wild로 되돌림.';
+  if (editorTool === 'measure') return 'Measure mode: 두 hex를 선택하면 m 단위 거리를 표시.';
+  return 'Inspect mode: 기존 맵 상태를 그대로 살펴보는 중.';
+}
+
+function buildMapPayload() {
+  return {
+    unit: {
+      hexAreaSqm: PYEONG_SQM,
+      hexAreaPyeong: 1,
+      hexSideMeters: Number(HEX_SIDE_M.toFixed(6)),
+      hexWidthMeters: Number(HEX_WIDTH_M.toFixed(6)),
+      hexHeightMeters: Number(HEX_HEIGHT_M.toFixed(6)),
+      coordinateSystem: 'flat-top axial q,r; distance measurements use center coordinates in meters'
+    },
+    grid: { width: MAP_WIDTH, height: MAP_HEIGHT },
+    tiles: [...tileState.values()]
   };
+}
+
+function exportInlineMap() {
+  const payload = buildMapPayload();
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'noji-ingame-map.json';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function saveMapToStorage() {
+  localStorage.setItem(MAP_STORAGE_KEY, JSON.stringify(buildMapPayload()));
+}
+
+function loadMapFromStorage() {
+  try {
+    const raw = localStorage.getItem(MAP_STORAGE_KEY);
+    if (!raw) return false;
+    return applyMapPayload(JSON.parse(raw));
+  } catch {
+    return false;
+  }
+}
+
+function applyMapPayload(payload) {
+  if (!payload?.tiles?.length) return false;
+  tileState.clear();
+  for (let r = 0; r < MAP_HEIGHT; r += 1) {
+    for (let q = 0; q < MAP_WIDTH; q += 1) {
+      tileState.set(tileKey(q, r), { q, r, zone: classifyTile(q, r, MAP_WIDTH, MAP_HEIGHT) });
+    }
+  }
+  for (const tile of payload.tiles) {
+    const k = tileKey(tile.q, tile.r);
+    if (tileState.has(k) && baseZones[tile.zone]) tileState.get(k).zone = tile.zone;
+  }
+  return true;
+}
+
+async function importInlineMap(event) {
+  const file = event.target.files?.[0];
+  if (!file) return;
+  try {
+    const payload = JSON.parse(await file.text());
+    if (!applyMapPayload(payload)) throw new Error('invalid map json');
+    saveMapToStorage();
+    measurePoints = [];
+    renderHexMap(projectData);
+    renderInlineEditorStats('loaded json');
+  } catch (error) {
+    renderInlineEditorStats(`load failed: ${error.message}`);
+  } finally {
+    event.target.value = '';
+  }
 }
 
 function zoneDescription(zone) {
   return {
     wild: '아직 미개척. 보존하거나 나중에 용도 지정 가능.',
     access: '진입로, 작업동선, 임시 주차 후보.',
+    parking: '차량 진입/주차 후보. 캠핑·작업 동선의 시작점.',
     camp: '텐트, 데크, 화로 같은 체류 오브젝트 후보.',
     utility: '물, 전기, 창고, 화장실 같은 기반시설 후보.',
     restricted: '하천/도로/규제 확인 전까지 잠긴 구역.',

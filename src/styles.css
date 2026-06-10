@@ -461,3 +461,58 @@ body.modal-open { overflow: hidden; }
   .editor-overlay { padding: 8px; }
   .editor-overlay-bar { align-items: flex-start; flex-direction: column; }
 }
+.inline-editor-panel {
+  display: none;
+  margin: 0 0 12px;
+  padding: 12px;
+  border: 1px solid rgba(184,224,109,.28);
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(14,32,21,.92), rgba(5,10,6,.92));
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.03);
+}
+body.editor-mode .inline-editor-panel { display: block; }
+body.editor-mode .map-stage { border-color: rgba(184,224,109,.55); box-shadow: 0 0 0 1px rgba(184,224,109,.2), 0 30px 100px rgba(0,0,0,.42); }
+.editor-mode-row { display:flex; justify-content:space-between; gap:12px; align-items:baseline; margin-bottom:10px; }
+.editor-mode-row strong { color: var(--gold); font-family: Orbitron, sans-serif; }
+.editor-mode-row span { color: var(--muted); font-size:12px; }
+.inline-editor-controls { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+.inline-editor-controls button,
+.inline-editor-controls select {
+  border:1px solid var(--line);
+  border-radius:999px;
+  background:rgba(0,0,0,.24);
+  color:var(--text);
+  padding:8px 11px;
+  cursor:pointer;
+}
+.inline-editor-controls button.active,
+.inline-editor-controls #export-inline-map {
+  background:var(--gold);
+  color:#102014;
+  font-weight:800;
+}
+.inline-editor-controls label { color:var(--muted); display:flex; gap:6px; align-items:center; }
+.inline-editor-stats {
+  display:flex;
+  flex-wrap:wrap;
+  gap:7px;
+  margin-top:10px;
+  color:var(--muted);
+  font-size:12px;
+}
+.inline-editor-stats span {
+  border:1px solid rgba(255,255,255,.1);
+  border-radius:999px;
+  background:rgba(0,0,0,.18);
+  padding:5px 8px;
+}
+body.editor-mode .hex-tile { stroke: rgba(205,245,161,.24); stroke-width: 1.25; }
+body.editor-mode .hex-tile:hover { stroke: var(--gold); stroke-width: 2.2; filter: brightness(1.45) saturate(1.25); }
+.inline-measure-point { fill: var(--gold); stroke: #07100a; stroke-width: 2; filter: drop-shadow(0 0 6px var(--gold)); pointer-events:none; }
+.inline-measure-line { stroke: var(--gold); stroke-width: 3; stroke-dasharray: 7 5; filter: drop-shadow(0 0 5px var(--gold)); pointer-events:none; }
+@media (max-width: 720px) {
+  .editor-mode-row { flex-direction:column; align-items:flex-start; }
+  .inline-editor-controls button,
+  .inline-editor-controls label,
+  .inline-editor-controls select { flex: 1 1 auto; }
+}
