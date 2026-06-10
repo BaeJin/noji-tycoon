@@ -211,11 +211,15 @@ function renderHexMap(data) {
     const q = hex.q;
     const r = hex.r;
     const k = tileKey(q, r);
-    const tile = tileState.get(k);
+    let tile = tileState.get(k);
+    if (!tile) {
+      tile = { q, r, zone: classifyTile(q, r, MAP_WIDTH, MAP_HEIGHT) };
+      tileState.set(k, tile);
+    }
     const zone = tile.zone;
     counts[zone] = (counts[zone] || 0) + 1;
     pointByKey.set(k, { x: x + 22, y: y + 22 });
-    const meta = zoneMeta[zone];
+    const meta = zoneMeta[zone] || zoneMeta.wild;
     const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
     poly.setAttribute('points', hexCorners(x + 22, y + 22, HEX_SIZE_PX));
     poly.setAttribute('fill', meta.color);
