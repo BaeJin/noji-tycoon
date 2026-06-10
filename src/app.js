@@ -166,13 +166,15 @@ function hexCorners(cx, cy, size) {
   return hexCornersArray(cx, cy, size).map(p => `${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(' ');
 }
 
+// Flat-top axial grid. Corner order is 0°, 60°, 120°, 180°, 240°, 300°.
+// Each edge midpoint points toward the neighbor across that edge.
 const EDGE_DIRECTIONS = [
-  [1, -1],
-  [0, -1],
-  [-1, 0],
-  [-1, 1],
-  [0, 1],
-  [1, 0]
+  [1, 0],    // edge 0: east / lower-right on screen
+  [0, 1],    // edge 1: south
+  [-1, 1],   // edge 2: west / lower-left on screen
+  [-1, 0],   // edge 3: west / upper-left on screen
+  [0, -1],   // edge 4: north
+  [1, -1]    // edge 5: east / upper-right on screen
 ];
 
 function boundaryEdgesForTile(tile) {
@@ -371,7 +373,13 @@ function showTile(tile, suffix = 'edited') {
 }
 
 function renderZoneBoundaries(svg, segments) {
+  const rendered = new Set();
   for (const segment of segments) {
+    const aKey = `${segment.a.x.toFixed(2)},${segment.a.y.toFixed(2)}`;
+    const bKey = `${segment.b.x.toFixed(2)},${segment.b.y.toFixed(2)}`;
+    const segmentKey = [aKey, bKey].sort().join('|');
+    if (rendered.has(segmentKey)) continue;
+    rendered.add(segmentKey);
     const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
     line.setAttribute('x1', segment.a.x.toFixed(2));
     line.setAttribute('y1', segment.a.y.toFixed(2));
