@@ -55,7 +55,6 @@ let editorEnabled = false;
 let editorTool = 'inspect';
 let paintZone = 'wild';
 let brushSize = 1;
-let isDraggingPaint = false;
 let measurePoints = [];
 let mapSettings = { width: DEFAULT_MAP_WIDTH, height: DEFAULT_MAP_HEIGHT };
 const tileState = new Map();
@@ -220,7 +219,6 @@ function setupInlineEditor() {
   });
   document.querySelector('#inline-zone-select').addEventListener('change', event => { paintZone = event.target.value; });
   document.querySelector('#brush-size-select').addEventListener('change', event => { brushSize = Number.parseInt(event.target.value, 10) || 1; renderInlineEditorStats(); });
-  window.addEventListener('pointerup', () => { isDraggingPaint = false; });
   document.querySelector('#apply-map-size').addEventListener('click', applyMapSizeFromInputs);
   document.querySelector('#fit-map-view').addEventListener('click', () => { renderHexMap(projectData); renderInlineEditorStats('fit view'); });
   syncMapSizeInputs();
@@ -286,8 +284,6 @@ function renderHexMap(data) {
     poly.dataset.q = q;
     poly.dataset.r = r;
     poly.dataset.zone = zone;
-    poly.addEventListener('pointerdown', (event) => handleTilePointerDown(event, tile, poly));
-    poly.addEventListener('pointerenter', () => handleTilePointerEnter(tile));
     poly.addEventListener('click', () => handleTileClick(tile, poly));
     svg.appendChild(poly);
   }
@@ -303,18 +299,6 @@ function renderHexMap(data) {
     selected.textContent = editorEnabled ? editorHelpText() : '타일을 선택해봐.';
     renderHexMap(data);
   };
-}
-
-function handleTilePointerDown(event, tile, poly) {
-  if (!editorEnabled || !['paint', 'erase'].includes(editorTool)) return;
-  event.preventDefault();
-  isDraggingPaint = true;
-  applyBrush(tile);
-}
-
-function handleTilePointerEnter(tile) {
-  if (!isDraggingPaint || !editorEnabled || !['paint', 'erase'].includes(editorTool)) return;
-  applyBrush(tile);
 }
 
 function getBrushTiles(center) {
@@ -341,7 +325,10 @@ function applyBrush(center) {
 function handleTileClick(tile, poly) {
   const selected = document.querySelector('#selected-tile');
   const zoneMeta = getZoneMeta();
-  if (editorEnabled && ['paint', 'erase'].includes(editorTool)) return;
+  if (editorEnabled && ['paint', 'erase'].includes(editorTool)) {
+    applyBrush(tile);
+    return;
+  }
   if (editorEnabled && editorTool === 'measure') {
     measurePoints.push({ q: tile.q, r: tile.r });
     if (measurePoints.length > 2) measurePoints = [measurePoints.at(-1)];
