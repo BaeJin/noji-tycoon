@@ -676,16 +676,9 @@ function applyFocusZone() {
 function onTileHover(event) {
   const rectEl = event.target.closest?.('.square-tile');
   if (!rectEl) { hideHover(); return; }
-  const svg = mapDom.svg;
-  const hover = svg.querySelector('#hover-rect');
-  hover.setAttribute('x', rectEl.getAttribute('x'));
-  hover.setAttribute('y', rectEl.getAttribute('y'));
-  hover.setAttribute('width', rectEl.getAttribute('width'));
-  hover.setAttribute('height', rectEl.getAttribute('height'));
-  hover.setAttribute('visibility', 'visible');
-
   const tile = tileState.get(tileKey(Number(rectEl.dataset.q), Number(rectEl.dataset.r)));
   if (!tile) return;
+  updateBrushHover(tile);
   lastHoverTile = tile;
   updateGhost(tile);
   const objectHere = objectAt(tile.q, tile.r);
@@ -790,11 +783,34 @@ function clearSelection() {
 
 /* ---------- brush ---------- */
 
+function brushBounds(center, size = brushSize) {
+  const span = Math.max(1, Math.round(Number(size) || 1));
+  const before = Math.floor((span - 1) / 2);
+  const q0 = Math.max(0, center.q - before);
+  const r0 = Math.max(0, center.r - before);
+  const q1 = Math.min(mapSettings.width - 1, q0 + span - 1);
+  const r1 = Math.min(mapSettings.height - 1, r0 + span - 1);
+  return { q0, r0, q1, r1, w: q1 - q0 + 1, h: r1 - r0 + 1 };
+}
+
+function updateBrushHover(center) {
+  const hover = mapDom.svg?.querySelector('#hover-rect');
+  if (!hover) return;
+  const showBrush = editorEnabled && ['paint', 'erase', 'terrain'].includes(editorTool);
+  const bounds = showBrush ? brushBounds(center) : { q0: center.q, r0: center.r, w: 1, h: 1 };
+  const { x, y, size } = tileRectPx(bounds.q0, bounds.r0);
+  hover.setAttribute('x', x);
+  hover.setAttribute('y', y);
+  hover.setAttribute('width', size * bounds.w);
+  hover.setAttribute('height', size * bounds.h);
+  hover.setAttribute('visibility', 'visible');
+}
+
 function getBrushTiles(center) {
-  const radius = brushSize === 5 ? 2 : brushSize === 3 ? 1 : 0;
+  const bounds = brushBounds(center);
   const result = [];
-  for (let r = center.r - radius; r <= center.r + radius; r += 1) {
-    for (let q = center.q - radius; q <= center.q + radius; q += 1) {
+  for (let r = bounds.r0; r <= bounds.r1; r += 1) {
+    for (let q = bounds.q0; q <= bounds.q1; q += 1) {
       const tile = tileState.get(tileKey(q, r));
       if (tile) result.push(tile);
     }
@@ -1276,7 +1292,7 @@ function renderEditorContext() {
     <div class="context-section">
       <h4>브러시</h4>
       <div class="brush-seg">
-        ${[1, 3, 5].map(size => `<button class="${brushSize === size ? 'active' : ''}" data-brush="${size}">${size}m</button>`).join('')}
+        ${[1, 3, 5, 10].map(size => `<button class="${brushSize === size ? 'active' : ''}" data-brush="${size}">${size}m</button>`).join('')}
       </div>
     </div>
   `;
@@ -1346,6 +1362,7 @@ function setupInlineEditor() {
       brushSize = Number.parseInt(brush.dataset.brush, 10) || 1;
       renderEditorContext();
       renderInlineEditorStats();
+      if (lastHoverTile) updateBrushHover(lastHoverTile);
     }
   });
 
