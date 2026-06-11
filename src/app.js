@@ -579,6 +579,7 @@ function setupMapInteractions() {
   });
 
   svg.addEventListener('pointermove', onTileHover);
+  frame.addEventListener('pointermove', hideHoverWhenOutsideTile);
   svg.addEventListener('pointerleave', hideHover);
   svg.addEventListener('pointerout', event => {
     const leftTile = event.target.closest?.('.square-tile');
@@ -728,6 +729,13 @@ function onTileHover(event) {
   tx = Math.min(tx, wrapRect.width - tooltip.offsetWidth - 10);
   ty = Math.min(ty, wrapRect.height - tooltip.offsetHeight - 10);
   tooltip.style.transform = `translate(${Math.max(8, tx)}px, ${Math.max(8, ty)}px)`;
+}
+
+
+function hideHoverWhenOutsideTile(event) {
+  const element = document.elementFromPoint(event.clientX, event.clientY);
+  const tileEl = element?.closest?.('.square-tile');
+  if (!tileEl || !mapDom.svg.contains(tileEl)) hideHover();
 }
 
 function hideHover() {
