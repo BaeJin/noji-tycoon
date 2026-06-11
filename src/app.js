@@ -81,8 +81,10 @@ let objectIdSeq = 1;
 let measurePoints = [];
 let mapZoom = Number.parseFloat(localStorage.getItem('noji-map-zoom') || '0');
 const DEFAULT_OVERLAY_SRC = '/overlays/hachunri-179-2-available-land.png';
+const DEFAULT_MAP_SRC = '/data/default-map.json';
 let overlayState = loadOverlayState();
 let mapSettings = { width: DEFAULT_MAP_WIDTH, height: DEFAULT_MAP_HEIGHT };
+let defaultMapPayload = null;
 const tileState = new Map();
 const rectByKey = new Map();
 let fillTable = {};
@@ -156,8 +158,12 @@ function placeAnchorFor(tile, type, rot) {
 }
 
 async function loadProject() {
-  const res = await fetch('/data/project.json');
-  projectData = await res.json();
+  const [projectRes, defaultMapRes] = await Promise.all([
+    fetch('/data/project.json'),
+    fetch(DEFAULT_MAP_SRC)
+  ]);
+  projectData = await projectRes.json();
+  defaultMapPayload = await defaultMapRes.json();
   setupThemeSwitcher();
   setupMapInteractions();
   setupMapAugmentControls();
@@ -205,6 +211,7 @@ function initTileState() {
   if (tileState.size) return;
   const saved = loadMapFromStorage();
   if (saved) return;
+  if (defaultMapPayload && applyMapPayload(defaultMapPayload)) return;
   resizeMap(DEFAULT_MAP_WIDTH, DEFAULT_MAP_HEIGHT, { preserve: false, save: false });
 }
 
