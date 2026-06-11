@@ -18,7 +18,10 @@
           <h1>Noji Tycoon</h1>
         </div>
       </div>
-      <div id="resource-bar" class="resource-bar"></div>
+      <div class="topbar-right">
+        <div id="resource-bar" class="resource-bar"></div>
+        <button id="open-admin" class="admin-button" title="지형 · 아이템 · 퀘스트 · 레벨 조건 관리">⚙ 관리</button>
+      </div>
     </header>
 
     <nav class="theme-switcher" aria-label="design theme selector">
@@ -33,13 +36,14 @@
     <main class="game-shell">
       <aside class="side-panel left-panel">
         <section class="land-card ornate">
-          <p class="label">LAND STATUS</p>
+          <p class="label">VILLAGE STATUS</p>
           <h2 id="land-name">Loading...</h2>
           <div class="level-meter">
             <span id="land-level">Lv.?</span>
             <div class="meter"><i id="level-fill"></i></div>
           </div>
           <p id="land-summary"></p>
+          <div id="upgrade-box" class="upgrade-box"></div>
         </section>
 
         <section class="panel">
@@ -138,22 +142,22 @@
       </section>
 
       <aside class="side-panel right-panel">
-        <section class="panel">
-          <div class="panel-title"><h3>Active Quests</h3><span>missions</span></div>
+        <section class="panel quest-panel">
+          <div class="panel-title"><h3>Quest Board</h3><span>missions</span></div>
+          <div class="quest-tabs">
+            <button data-quest-tab="todo" class="active">가능</button>
+            <button data-quest-tab="doing">진행</button>
+            <button data-quest-tab="done">완료</button>
+          </div>
           <div id="quests" class="quest-list"></div>
-        </section>
-
-        <section class="panel">
-          <div class="panel-title"><h3>Build Objects</h3><span>owned / locked</span></div>
-          <div id="objects" class="object-grid"></div>
         </section>
       </aside>
     </main>
 
     <section class="bottom-dock">
       <div class="panel wide">
-        <div class="panel-title"><h3>Available Actions</h3><span>change the land</span></div>
-        <div id="actions" class="action-row"></div>
+        <div class="panel-title"><h3>Inventory</h3><span>퀘스트 보상 · 클릭하면 설치 모드</span></div>
+        <div id="inventory" class="inventory-grid"></div>
       </div>
       <div class="panel players-panel">
         <div class="panel-title"><h3>Players</h3><span>party</span></div>
@@ -161,6 +165,23 @@
       </div>
     </section>
   </div>
+
+  <div id="admin-modal" class="admin-modal" hidden>
+    <div class="admin-window">
+      <div class="admin-head">
+        <strong>⚙ 콘텐츠 관리</strong>
+        <nav class="admin-tabs">
+          <button data-admin-tab="zones" class="active">지형</button>
+          <button data-admin-tab="items">아이템</button>
+          <button data-admin-tab="quests">퀘스트</button>
+          <button data-admin-tab="levels">레벨 조건</button>
+        </nav>
+        <button id="close-admin" title="닫기 (Esc)">✕</button>
+      </div>
+      <div id="admin-body" class="admin-body"></div>
+    </div>
+  </div>
+  <div id="toast" class="toast" hidden></div>
 
   <script type="module" src="/src/app.js"></script>
 </body>

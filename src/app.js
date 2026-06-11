@@ -15,16 +15,40 @@ const ZOOM_MAX = 4;
 const TERRAIN_MIN = -10;
 const TERRAIN_MAX = 30;
 const CONTOUR_MAJOR_STEP = 5;
+const PLAYER_NAME = '나';
 
-const baseZones = {
-  wild: { label: 'Wild Forest', icon: '🌲' },
-  access: { label: 'Access Road', icon: '🛤️' },
-  parking: { label: 'Parking', icon: '🚙' },
-  camp: { label: 'Camp Field', icon: '⛺' },
-  utility: { label: 'Utility Yard', icon: '⚙️' },
-  restricted: { label: 'Restricted', icon: '⚠️' },
-  garden: { label: 'Garden', icon: '🥬' },
-  rest: { label: 'Rest Area', icon: '🔥' }
+/* ---------- seed content (first run only; afterwards editable in 관리 modal) ---------- */
+
+const seedZones = {
+  wild: { label: 'Wild Forest', icon: '🌲', color: null, unlockLevel: 0 },
+  access: { label: 'Access Road', icon: '🛤️', color: null, unlockLevel: 0 },
+  parking: { label: 'Parking', icon: '🚙', color: null, unlockLevel: 0 },
+  camp: { label: 'Camp Field', icon: '⛺', color: null, unlockLevel: 0 },
+  utility: { label: 'Utility Yard', icon: '⚙️', color: null, unlockLevel: 0 },
+  restricted: { label: 'Restricted', icon: '⚠️', color: null, unlockLevel: 0 },
+  garden: { label: 'Garden', icon: '🥬', color: null, unlockLevel: 0 },
+  rest: { label: 'Rest Area', icon: '🔥', color: null, unlockLevel: 0 }
+};
+
+const seedItems = {
+  tent: { label: '텐트', icon: '⛺', w: 10, h: 5, unlockLevel: 0, tint: '#3e8f66' },
+  vehicle: { label: '차량', icon: '🚙', w: 5, h: 2, unlockLevel: 0, tint: '#7890a8' },
+  toilet: { label: '간이화장실', icon: '🚻', w: 2, h: 2, unlockLevel: 0, tint: '#9b8456' },
+  firepit: { label: '화로대', icon: '🔥', w: 1, h: 1, unlockLevel: 0, tint: '#d65345' }
+};
+
+const ITEM_TINTS = ['#3e8f66', '#7890a8', '#9b8456', '#d65345', '#6d8c3f', '#b28b45', '#5a7da8', '#a85a8f'];
+const OBJECT_ROTATIONS = [0, 90, 180, 270];
+
+const zoneSeedDescriptions = {
+  wild: '아직 미개척. 보존하거나 나중에 용도 지정 가능.',
+  access: '진입로, 작업동선, 임시 주차 후보.',
+  parking: '차량 진입/주차 후보. 캠핑·작업 동선의 시작점.',
+  camp: '텐트, 데크, 화로 같은 체류 오브젝트 후보.',
+  utility: '물, 전기, 창고, 화장실 같은 기반시설 후보.',
+  restricted: '하천/도로/규제 확인 전까지 잠긴 구역.',
+  garden: '텃밭, 온실, 작물 실험 후보.',
+  rest: '쉼터, 전망, 가족 모임 후보.'
 };
 
 const themes = {
@@ -55,15 +79,10 @@ const statusTone = {
   locked: 'muted', needs_survey: 'warn', blocked: 'bad', invited_later: 'muted'
 };
 
-const objectTypes = {
-  tent: { label: '텐트', icon: '⛺', w: 10, h: 5, tint: '#3e8f66' },
-  vehicle: { label: '차량', icon: '🚙', w: 5, h: 2, tint: '#7890a8' },
-  toilet: { label: '간이화장실', icon: '🚻', w: 2, h: 2, tint: '#9b8456' },
-  firepit: { label: '화로대', icon: '🔥', w: 1, h: 1, tint: '#d65345' }
-};
-const OBJECT_ROTATIONS = [0, 90, 180, 270];
+/* ---------- state ---------- */
 
 let projectData;
+let gameState = null;
 let currentTheme = localStorage.getItem('noji-theme') || 'forest';
 let editorEnabled = false;
 let editorTool = 'inspect';
@@ -81,17 +100,21 @@ let objectIdSeq = 1;
 let measurePoints = [];
 let mapZoom = Number.parseFloat(localStorage.getItem('noji-map-zoom') || '0');
 const DEFAULT_OVERLAY_SRC = '/overlays/hachunri-179-2-available-land.png';
-const DEFAULT_MAP_SRC = '/data/default-map.json';
 let overlayState = loadOverlayState();
 let mapSettings = { width: DEFAULT_MAP_WIDTH, height: DEFAULT_MAP_HEIGHT };
-let defaultMapPayload = null;
 const tileState = new Map();
 const rectByKey = new Map();
 let fillTable = {};
 let selectedTileKey = null;
 let focusZone = null;
 let panSuppressedClick = false;
+let activeQuestTab = 'todo';
+let pendingCompleteId = null;
+let pendingCompleteTimer = null;
+let adminTab = 'zones';
+let toastTimer = null;
 const MAP_STORAGE_KEY = 'noji-square-map-v1';
+const GAME_STORAGE_KEY = 'noji-game-v1';
 
 const mapDom = {
   get svg() { return document.querySelector('#tile-svg'); },
@@ -102,12 +125,171 @@ const mapDom = {
   get legend() { return document.querySelector('#zone-legend'); },
   get editorContext() { return document.querySelector('#editor-context'); },
   get editorSettings() { return document.querySelector('#editor-settings'); },
-  get overlayPanel() { return document.querySelector('#overlay-panel'); }
+  get overlayPanel() { return document.querySelector('#overlay-panel'); },
+  get adminModal() { return document.querySelector('#admin-modal'); },
+  get adminBody() { return document.querySelector('#admin-body'); }
 };
 
+/* ---------- game state: load / save / normalize ---------- */
+
+function maxVillageLevel() {
+  return (projectData?.levels?.length || 6) - 1;
+}
+
+function defaultGameState() {
+  return {
+    village: { level: projectData?.land?.level ?? 0 },
+    zones: structuredClone(seedZones),
+    items: structuredClone(seedItems),
+    inventory: {},
+    quests: (projectData?.quests || []).map(q => ({
+      id: q.id,
+      title: q.title,
+      desc: q.notes || '',
+      method: '',
+      unlockLevel: 0,
+      prereq: null,
+      rewards: [],
+      status: 'todo',
+      assignee: ''
+    })),
+    levelRequirements: {}
+  };
+}
+
+function normalizeGameState(raw) {
+  const base = defaultGameState();
+  if (!raw || typeof raw !== 'object') return base;
+  const state = {
+    village: { level: Math.max(0, Math.min(maxVillageLevel(), Number.parseInt(raw.village?.level, 10) || 0)) },
+    zones: {},
+    items: {},
+    inventory: {},
+    quests: [],
+    levelRequirements: {}
+  };
+  const zonesSrc = raw.zones && typeof raw.zones === 'object' && Object.keys(raw.zones).length ? raw.zones : base.zones;
+  for (const [key, z] of Object.entries(zonesSrc)) {
+    if (!z || typeof z !== 'object') continue;
+    state.zones[key] = {
+      label: String(z.label || key),
+      icon: String(z.icon || '🏷️'),
+      color: typeof z.color === 'string' && z.color ? z.color : null,
+      unlockLevel: Math.max(0, Math.min(maxVillageLevel(), Number.parseInt(z.unlockLevel, 10) || 0))
+    };
+  }
+  if (!state.zones.wild) state.zones.wild = structuredClone(seedZones.wild);
+  const itemsSrc = raw.items && typeof raw.items === 'object' && Object.keys(raw.items).length ? raw.items : base.items;
+  for (const [key, it] of Object.entries(itemsSrc)) {
+    if (!it || typeof it !== 'object') continue;
+    state.items[key] = {
+      label: String(it.label || key),
+      icon: String(it.icon || '📦'),
+      w: Math.max(1, Math.min(40, Number.parseInt(it.w, 10) || 1)),
+      h: Math.max(1, Math.min(40, Number.parseInt(it.h, 10) || 1)),
+      unlockLevel: Math.max(0, Math.min(maxVillageLevel(), Number.parseInt(it.unlockLevel, 10) || 0)),
+      tint: typeof it.tint === 'string' ? it.tint : null
+    };
+  }
+  if (raw.inventory && typeof raw.inventory === 'object') {
+    for (const [key, count] of Object.entries(raw.inventory)) {
+      if (state.items[key]) state.inventory[key] = Math.max(0, Number.parseInt(count, 10) || 0);
+    }
+  }
+  const questsSrc = Array.isArray(raw.quests) ? raw.quests : base.quests;
+  for (const q of questsSrc) {
+    if (!q || !q.title) continue;
+    state.quests.push({
+      id: q.id || makeId('q'),
+      title: String(q.title),
+      desc: String(q.desc || ''),
+      method: String(q.method || ''),
+      unlockLevel: Math.max(0, Math.min(maxVillageLevel(), Number.parseInt(q.unlockLevel, 10) || 0)),
+      prereq: q.prereq || null,
+      rewards: (Array.isArray(q.rewards) ? q.rewards : [])
+        .filter(rw => rw && state.items[rw.item])
+        .map(rw => ({ item: rw.item, count: Math.max(1, Number.parseInt(rw.count, 10) || 1) })),
+      status: ['todo', 'doing', 'done'].includes(q.status) ? q.status : 'todo',
+      assignee: String(q.assignee || '')
+    });
+  }
+  if (raw.levelRequirements && typeof raw.levelRequirements === 'object') {
+    for (const [lvl, reqs] of Object.entries(raw.levelRequirements)) {
+      const level = Number.parseInt(lvl, 10);
+      if (!Number.isInteger(level) || level < 1 || level > maxVillageLevel()) continue;
+      state.levelRequirements[level] = (Array.isArray(reqs) ? reqs : [])
+        .filter(rq => rq && state.items[rq.item])
+        .map(rq => ({ item: rq.item, count: Math.max(1, Number.parseInt(rq.count, 10) || 1) }));
+    }
+  }
+  return state;
+}
+
+function loadGameState() {
+  try {
+    const raw = localStorage.getItem(GAME_STORAGE_KEY);
+    gameState = normalizeGameState(raw ? JSON.parse(raw) : null);
+  } catch {
+    gameState = defaultGameState();
+  }
+  if (!gameState.items[placeType]) placeType = Object.keys(gameState.items)[0] || 'tent';
+  if (!gameState.zones[paintZone]) paintZone = 'wild';
+}
+
+function saveGameState() {
+  localStorage.setItem(GAME_STORAGE_KEY, JSON.stringify(gameState));
+}
+
+function makeId(prefix) {
+  return `${prefix}_${Date.now().toString(36)}_${objectIdSeq++}`;
+}
+
+/* ---------- item economy helpers ---------- */
+
+function itemMeta(type) {
+  return gameState?.items?.[type] || null;
+}
+
+function itemTint(type) {
+  const meta = itemMeta(type);
+  if (meta?.tint) return meta.tint;
+  let hash = 0;
+  for (const ch of type) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;
+  return ITEM_TINTS[hash % ITEM_TINTS.length];
+}
+
+function inventoryOf(type) { return gameState.inventory[type] || 0; }
+function placedCountOf(type) { return placedObjects.filter(obj => obj.type === type).length; }
+function ownedOf(type) { return inventoryOf(type) + placedCountOf(type); }
+
+function addInventory(type, delta) {
+  if (!itemMeta(type)) return;
+  gameState.inventory[type] = Math.max(0, inventoryOf(type) + delta);
+  saveGameState();
+}
+
+function isZoneUnlocked(key) {
+  return (gameState.zones[key]?.unlockLevel || 0) <= gameState.village.level;
+}
+
+function isItemUnlocked(key) {
+  return (gameState.items[key]?.unlockLevel || 0) <= gameState.village.level;
+}
+
+/* ---------- zone meta ---------- */
+
 function getZoneMeta() {
-  const colors = themes[currentTheme]?.colors || themes.frontier.colors;
-  return Object.fromEntries(Object.entries(baseZones).map(([key, value]) => [key, { ...value, color: colors[key] }]));
+  const themeColors = themes[currentTheme]?.colors || themes.frontier.colors;
+  return Object.fromEntries(Object.entries(gameState.zones).map(([key, zone]) => [key, {
+    label: zone.label,
+    icon: zone.icon || '🏷️',
+    color: zone.color || themeColors[key] || '#5d7252',
+    unlockLevel: zone.unlockLevel || 0
+  }]));
+}
+
+function zoneDescription(zone) {
+  return zoneSeedDescriptions[zone] || '';
 }
 
 function tileKey(q, r) { return `${q},${r}`; }
@@ -118,12 +300,8 @@ function clampTerrain(value) {
 
 /* ---------- placed objects: geometry helpers ---------- */
 
-function makeObjectId() {
-  return `obj_${Date.now().toString(36)}_${objectIdSeq++}`;
-}
-
 function footprintOf(type, rot) {
-  const meta = objectTypes[type] || objectTypes.firepit;
+  const meta = itemMeta(type) || { w: 1, h: 1 };
   return rot % 180 === 0 ? { w: meta.w, h: meta.h } : { w: meta.h, h: meta.w };
 }
 
@@ -157,17 +335,19 @@ function placeAnchorFor(tile, type, rot) {
   return { q, r };
 }
 
+/* ---------- boot ---------- */
+
 async function loadProject() {
-  const [projectRes, defaultMapRes] = await Promise.all([
-    fetch('/data/project.json'),
-    fetch(DEFAULT_MAP_SRC)
-  ]);
-  projectData = await projectRes.json();
-  defaultMapPayload = await defaultMapRes.json();
+  const res = await fetch('/data/project.json');
+  projectData = await res.json();
+  loadGameState();
   setupThemeSwitcher();
   setupMapInteractions();
   setupMapAugmentControls();
   setupInlineEditor();
+  setupQuestBoard();
+  setupInventory();
+  setupAdmin();
   applyTheme(currentTheme);
   render(projectData);
 }
@@ -211,7 +391,6 @@ function initTileState() {
   if (tileState.size) return;
   const saved = loadMapFromStorage();
   if (saved) return;
-  if (defaultMapPayload && applyMapPayload(defaultMapPayload)) return;
   resizeMap(DEFAULT_MAP_WIDTH, DEFAULT_MAP_HEIGHT, { preserve: false, save: false });
 }
 
@@ -264,7 +443,7 @@ function viewSizePx() {
   };
 }
 
-/* ---------- terrain fill: deterministic per-tile shade variation ---------- */
+/* ---------- terrain fill ---------- */
 
 function shadeColor(hex, amount) {
   const num = Number.parseInt(hex.slice(1), 16);
@@ -274,6 +453,8 @@ function shadeColor(hex, amount) {
   const b = channel(num & 255);
   return `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, '0')}`;
 }
+
+const heightShadeCache = new Map();
 
 function rebuildFillTable() {
   const meta = getZoneMeta();
@@ -288,8 +469,6 @@ function rebuildFillTable() {
     ];
   }
 }
-
-const heightShadeCache = new Map();
 
 function fillFor(zone, q, r, h = 0) {
   const shades = fillTable[zone] || fillTable.wild;
@@ -308,20 +487,20 @@ function fillFor(zone, q, r, h = 0) {
 /* ---------- main render ---------- */
 
 function render(data) {
-  document.querySelector('#land-name').textContent = data.land.name;
-  document.querySelector('#land-level').textContent = `Lv.${data.land.level} ${data.land.levelName}`;
-  document.querySelector('#land-summary').textContent = `${data.land.address} · ${data.land.areaPyeongApprox}평 · ${data.land.nextLevelGoal}`;
-  document.querySelector('#level-fill').style.width = `${Math.min(100, (data.land.level / 5) * 100)}%`;
-
   renderResourceBar(data.resources);
   initTileState();
   buildMapDom();
   if (!mapZoom || Number.isNaN(mapZoom)) fitView();
-  renderLevels(data.levels, data.land.level);
-  renderActions(data.actions);
-  renderQuests(data.quests);
-  renderObjects(data.objects);
+  renderGame();
   renderPlayers(data.players);
+}
+
+function renderGame() {
+  renderVillagePanel();
+  renderLevels();
+  renderQuestBoard();
+  renderInventory();
+  renderInlineEditorStats();
 }
 
 function buildMapDom() {
@@ -380,6 +559,16 @@ function buildMapDom() {
   renderInlineEditorStats();
 }
 
+function repaintTiles() {
+  rebuildFillTable();
+  for (const [k, rect] of rectByKey) {
+    const tile = tileState.get(k);
+    if (!tile) continue;
+    rect.setAttribute('fill', fillFor(tile.zone, tile.q, tile.r, tileH(tile)));
+    rect.setAttribute('class', `square-tile zone-${tile.zone}${focusZone && tile.zone !== focusZone ? ' zone-dimmed' : ''}`);
+  }
+}
+
 /* ---------- placed objects: rendering ---------- */
 
 function renderObjectsLayer() {
@@ -387,7 +576,7 @@ function renderObjectsLayer() {
   if (!layer) return;
   layer.innerHTML = '';
   for (const obj of placedObjects) {
-    const meta = objectTypes[obj.type];
+    const meta = itemMeta(obj.type);
     if (!meta) continue;
     const { w, h } = footprintOf(obj.type, obj.rot);
     const { x, y } = tileRectPx(obj.q, obj.r);
@@ -401,7 +590,7 @@ function renderObjectsLayer() {
     g.setAttribute('class', 'map-object');
     g.dataset.objectId = obj.id;
     g.innerHTML = `
-      <rect class="map-object-rect" x="${x}" y="${y}" width="${pw}" height="${ph}" rx="${SQUARE_SIZE_PX * 0.3}" style="fill:${meta.tint}" />
+      <rect class="map-object-rect" x="${x}" y="${y}" width="${pw}" height="${ph}" rx="${SQUARE_SIZE_PX * 0.3}" style="fill:${itemTint(obj.type)}" />
       <polygon class="map-object-arrow" points="${cx - arrowSpan},${y + ph * 0.16 + arrowSpan} ${cx + arrowSpan},${y + ph * 0.16 + arrowSpan} ${cx},${y + ph * 0.16}"
         transform="rotate(${obj.rot} ${cx} ${cy})" />
       <text class="map-object-icon" x="${cx}" y="${cy}" font-size="${iconSize}">${meta.icon}</text>
@@ -413,19 +602,19 @@ function renderObjectsLayer() {
 function updateGhost(tile) {
   const layer = mapDom.svg?.querySelector('#ghost-layer');
   if (!layer) return;
-  if (!tile || !editorEnabled || editorTool !== 'place') {
+  if (!tile || !editorEnabled || editorTool !== 'place' || !itemMeta(placeType)) {
     layer.innerHTML = '';
     return;
   }
   const anchor = placeAnchorFor(tile, placeType, placeRotation);
   const candidate = { type: placeType, q: anchor.q, r: anchor.r, rot: placeRotation };
   const hit = objectAt(tile.q, tile.r);
-  const valid = !hit && canPlaceObject(candidate);
+  const valid = !hit && canPlaceObject(candidate) && inventoryOf(placeType) > 0;
   const { w, h } = footprintOf(placeType, placeRotation);
   const { x, y } = tileRectPx(anchor.q, anchor.r);
   const pw = w * SQUARE_SIZE_PX;
   const ph = h * SQUARE_SIZE_PX;
-  const meta = objectTypes[placeType];
+  const meta = itemMeta(placeType);
   layer.innerHTML = hit ? `
     <rect class="object-ghost pickup" x="${tileRectPx(hit.q, hit.r).x}" y="${tileRectPx(hit.q, hit.r).y}"
       width="${footprintOf(hit.type, hit.rot).w * SQUARE_SIZE_PX}" height="${footprintOf(hit.type, hit.rot).h * SQUARE_SIZE_PX}" rx="${SQUARE_SIZE_PX * 0.3}" />
@@ -435,17 +624,7 @@ function updateGhost(tile) {
   `;
 }
 
-function repaintTiles() {
-  rebuildFillTable();
-  for (const [k, rect] of rectByKey) {
-    const tile = tileState.get(k);
-    if (!tile) continue;
-    rect.setAttribute('fill', fillFor(tile.zone, tile.q, tile.r, tileH(tile)));
-    rect.setAttribute('class', `square-tile zone-${tile.zone}`);
-  }
-}
-
-/* ---------- zone boundaries ---------- */
+/* ---------- zone boundaries + contours ---------- */
 
 function squareCornersArray(x, y, size) {
   return [
@@ -586,10 +765,7 @@ function setupMapInteractions() {
   });
 
   svg.addEventListener('pointermove', onTileHover);
-  frame.addEventListener('pointermove', hideHoverWhenOutsideTile);
-  frame.addEventListener('pointerleave', hideHover);
-  frame.addEventListener('scroll', hideHover, { passive: true });
-  window.addEventListener('blur', hideHover);
+  svg.addEventListener('pointerleave', hideHover);
 
   let panState = null;
   frame.addEventListener('pointerdown', event => {
@@ -641,22 +817,23 @@ function setupMapInteractions() {
   });
 
   const contourToggle = document.querySelector('#map-contour-toggle');
-  const boundaryToggle = document.querySelector('#map-boundary-toggle');
   const syncContourToggle = () => {
     document.body.classList.toggle('contours-off', !contoursVisible);
     contourToggle.classList.toggle('active', contoursVisible);
   };
-  const syncBoundaryToggle = () => {
-    document.body.classList.toggle('zone-boundaries-off', !zoneBoundariesVisible);
-    boundaryToggle.classList.toggle('active', zoneBoundariesVisible);
-  };
   syncContourToggle();
-  syncBoundaryToggle();
   contourToggle.addEventListener('click', () => {
     contoursVisible = !contoursVisible;
     localStorage.setItem('noji-contours', String(contoursVisible));
     syncContourToggle();
   });
+
+  const boundaryToggle = document.querySelector('#map-boundary-toggle');
+  const syncBoundaryToggle = () => {
+    document.body.classList.toggle('zone-boundaries-off', !zoneBoundariesVisible);
+    boundaryToggle.classList.toggle('active', zoneBoundariesVisible);
+  };
+  syncBoundaryToggle();
   boundaryToggle.addEventListener('click', () => {
     zoneBoundariesVisible = !zoneBoundariesVisible;
     localStorage.setItem('noji-zone-boundaries', String(zoneBoundariesVisible));
@@ -673,9 +850,11 @@ function setupMapInteractions() {
 }
 
 function applyFocusZone() {
-  const svg = mapDom.svg;
-  if (focusZone) svg.dataset.focusZone = focusZone;
-  else delete svg.dataset.focusZone;
+  for (const [k, rect] of rectByKey) {
+    const tile = tileState.get(k);
+    if (!tile) continue;
+    rect.classList.toggle('zone-dimmed', Boolean(focusZone) && tile.zone !== focusZone);
+  }
 }
 
 /* ---------- hover tooltip ---------- */
@@ -683,26 +862,35 @@ function applyFocusZone() {
 function onTileHover(event) {
   const rectEl = event.target.closest?.('.square-tile');
   if (!rectEl) { hideHover(); return; }
+  const svg = mapDom.svg;
+  const hover = svg.querySelector('#hover-rect');
+  hover.setAttribute('x', rectEl.getAttribute('x'));
+  hover.setAttribute('y', rectEl.getAttribute('y'));
+  hover.setAttribute('width', rectEl.getAttribute('width'));
+  hover.setAttribute('height', rectEl.getAttribute('height'));
+  hover.setAttribute('visibility', 'visible');
+
   const tile = tileState.get(tileKey(Number(rectEl.dataset.q), Number(rectEl.dataset.r)));
   if (!tile) return;
-  updateBrushHover(tile);
   lastHoverTile = tile;
   updateGhost(tile);
   const objectHere = objectAt(tile.q, tile.r);
+  const zoneMeta = getZoneMeta();
+  const meta = zoneMeta[tile.zone] || zoneMeta.wild;
   const tooltip = mapDom.tooltip;
-  if (editorEnabled && editorTool === 'paint') {
-    tooltip.hidden = true;
-    return;
-  }
-  const meta = getZoneMeta()[tile.zone] || getZoneMeta().wild;
   tooltip.hidden = false;
   let hint = '';
   if (editorEnabled && editorTool === 'place') {
-    const placeMeta = objectTypes[placeType];
+    const placeMeta = itemMeta(placeType);
     const { w, h } = footprintOf(placeType, placeRotation);
     hint = objectHere
-      ? `<em>📦 ${objectTypes[objectHere.type]?.icon || ''} ${objectTypes[objectHere.type]?.label || ''} — 클릭해서 집어 옮기기</em>`
-      : `<em>📦 ${placeMeta.icon} ${placeMeta.label} ${w}×${h}m · R 회전</em>`;
+      ? `<em>📦 ${itemMeta(objectHere.type)?.icon || ''} ${itemMeta(objectHere.type)?.label || ''} — 클릭해서 집어 옮기기</em>`
+      : `<em>📦 ${placeMeta?.icon || ''} ${placeMeta?.label || ''} ${w}×${h}m · 보유 ${inventoryOf(placeType)} · R 회전</em>`;
+  } else if (editorEnabled && editorTool === 'erase' && objectHere) {
+    hint = `<em>🧽 ${itemMeta(objectHere.type)?.icon || ''} ${itemMeta(objectHere.type)?.label || ''} 제거 (인벤토리 반환)</em>`;
+  } else if (editorEnabled && (editorTool === 'paint' || editorTool === 'erase')) {
+    const zoneIcon = zoneMeta[paintZone]?.icon || '';
+    hint = `<em>${editorTool === 'paint' ? `🖌 ${zoneIcon} ${zoneMeta[paintZone]?.label || paintZone}` : '🧽 → wild'} · ${brushSize}m</em>`;
   } else if (editorEnabled && editorTool === 'terrain') {
     const modeText = terrainMode === 'raise' ? '▲ +1m' : terrainMode === 'lower' ? '▼ −1m' : `▦ ${terrainLevel}m 평탄화`;
     hint = `<em>⛰ ${modeText} · ${brushSize}m</em>`;
@@ -711,8 +899,8 @@ function onTileHover(event) {
   } else {
     hint = `<em class="desc">${zoneDescription(tile.zone) || ''}</em>`;
   }
-  const objectLine = objectHere && !(editorEnabled && editorTool === 'place')
-    ? `<span>📦 ${objectTypes[objectHere.type]?.icon || ''} ${objectTypes[objectHere.type]?.label || ''}</span>` : '';
+  const objectLine = objectHere && !(editorEnabled && ['place', 'erase'].includes(editorTool))
+    ? `<span>📦 ${itemMeta(objectHere.type)?.icon || ''} ${itemMeta(objectHere.type)?.label || ''}</span>` : '';
   tooltip.innerHTML = `<b>${meta.icon} ${meta.label}</b><span>(${tile.q}, ${tile.r}) · 고도 ${tileH(tile)}m</span>${objectLine}${hint}`;
 
   const wrapRect = mapDom.wrap.getBoundingClientRect();
@@ -721,12 +909,6 @@ function onTileHover(event) {
   tx = Math.min(tx, wrapRect.width - tooltip.offsetWidth - 10);
   ty = Math.min(ty, wrapRect.height - tooltip.offsetHeight - 10);
   tooltip.style.transform = `translate(${Math.max(8, tx)}px, ${Math.max(8, ty)}px)`;
-}
-
-function hideHoverWhenOutsideTile(event) {
-  const element = document.elementFromPoint(event.clientX, event.clientY);
-  const tileEl = element?.closest?.('.square-tile');
-  if (!tileEl || !mapDom.svg.contains(tileEl)) hideHover();
 }
 
 function hideHover() {
@@ -745,7 +927,14 @@ function handleTileClick(tile, rectEl) {
     handlePlaceClick(tile);
     return;
   }
-  if (editorEnabled && editorTool === 'paint') {
+  if (editorEnabled && editorTool === 'erase') {
+    const hit = objectAt(tile.q, tile.r);
+    if (hit) {
+      removeObject(hit.id, { refund: true });
+      return;
+    }
+  }
+  if (editorEnabled && ['paint', 'erase'].includes(editorTool)) {
     applyBrush(tile);
     return;
   }
@@ -782,34 +971,11 @@ function clearSelection() {
 
 /* ---------- brush ---------- */
 
-function brushBounds(center, size = brushSize) {
-  const span = Math.max(1, Math.round(Number(size) || 1));
-  const before = Math.floor((span - 1) / 2);
-  const q0 = Math.max(0, center.q - before);
-  const r0 = Math.max(0, center.r - before);
-  const q1 = Math.min(mapSettings.width - 1, q0 + span - 1);
-  const r1 = Math.min(mapSettings.height - 1, r0 + span - 1);
-  return { q0, r0, q1, r1, w: q1 - q0 + 1, h: r1 - r0 + 1 };
-}
-
-function updateBrushHover(center) {
-  const hover = mapDom.svg?.querySelector('#hover-rect');
-  if (!hover) return;
-  const showBrush = editorEnabled && ['paint', 'terrain'].includes(editorTool);
-  const bounds = showBrush ? brushBounds(center) : { q0: center.q, r0: center.r, w: 1, h: 1 };
-  const { x, y, size } = tileRectPx(bounds.q0, bounds.r0);
-  hover.setAttribute('x', x);
-  hover.setAttribute('y', y);
-  hover.setAttribute('width', size * bounds.w);
-  hover.setAttribute('height', size * bounds.h);
-  hover.setAttribute('visibility', 'visible');
-}
-
 function getBrushTiles(center) {
-  const bounds = brushBounds(center);
+  const radius = brushSize === 5 ? 2 : brushSize === 3 ? 1 : 0;
   const result = [];
-  for (let r = bounds.r0; r <= bounds.r1; r += 1) {
-    for (let q = bounds.q0; q <= bounds.q1; q += 1) {
+  for (let r = center.r - radius; r <= center.r + radius; r += 1) {
+    for (let q = center.q - radius; q <= center.q + radius; q += 1) {
       const tile = tileState.get(tileKey(q, r));
       if (tile) result.push(tile);
     }
@@ -818,14 +984,15 @@ function getBrushTiles(center) {
 }
 
 function applyBrush(center) {
-  const nextZone = paintZone;
+  const nextZone = editorTool === 'erase' ? 'wild' : paintZone;
+  if (!gameState.zones[nextZone] || (editorTool === 'paint' && !isZoneUnlocked(nextZone))) return;
   for (const tile of getBrushTiles(center)) {
     if (tile.zone === nextZone) continue;
     tile.zone = nextZone;
     const rect = rectByKey.get(tileKey(tile.q, tile.r));
     if (rect) {
       rect.setAttribute('fill', fillFor(nextZone, tile.q, tile.r, tileH(tile)));
-      rect.setAttribute('class', `square-tile zone-${nextZone}`);
+      rect.setAttribute('class', `square-tile zone-${nextZone}${focusZone && nextZone !== focusZone ? ' zone-dimmed' : ''}`);
     }
   }
   saveMapToStorage();
@@ -840,29 +1007,68 @@ function handlePlaceClick(tile) {
   const hit = objectAt(tile.q, tile.r);
   if (hit) {
     placedObjects = placedObjects.filter(obj => obj.id !== hit.id);
+    addInventory(hit.type, 1);
     placeType = hit.type;
     placeRotation = hit.rot;
     renderObjectsLayer();
     renderEditorContext();
+    renderInventory();
     saveMapToStorage();
-    renderInlineEditorStats(`${objectTypes[hit.type]?.label || ''} 집음 — 클릭해서 다시 설치`);
+    renderInlineEditorStats(`${itemMeta(hit.type)?.label || ''} 집음 — 클릭해서 다시 설치`);
     updateGhost(tile);
     return;
   }
+  if (inventoryOf(placeType) <= 0) {
+    showToast(`📦 ${itemMeta(placeType)?.label || ''} 보유 없음 — 퀘스트 보상으로 획득하세요`);
+    return;
+  }
   const anchor = placeAnchorFor(tile, placeType, placeRotation);
-  const candidate = { id: makeObjectId(), type: placeType, q: anchor.q, r: anchor.r, rot: placeRotation };
+  const candidate = { id: makeId('obj'), type: placeType, q: anchor.q, r: anchor.r, rot: placeRotation };
   if (!canPlaceObject(candidate)) return;
   placedObjects.push(candidate);
+  addInventory(placeType, -1);
   renderObjectsLayer();
+  renderEditorContext();
+  renderInventory();
   saveMapToStorage();
   renderInlineEditorStats();
   updateGhost(tile);
+}
+
+function removeObject(id, { refund = true } = {}) {
+  const obj = placedObjects.find(o => o.id === id);
+  placedObjects = placedObjects.filter(o => o.id !== id);
+  if (obj && refund) addInventory(obj.type, 1);
+  renderObjectsLayer();
+  renderInventory();
+  saveMapToStorage();
+  renderInlineEditorStats(obj ? `${itemMeta(obj.type)?.label || ''} 제거됨${refund ? ' (인벤토리 반환)' : ''}` : '');
+  if (lastHoverTile) updateGhost(lastHoverTile);
 }
 
 function rotatePlaceObject() {
   placeRotation = OBJECT_ROTATIONS[(OBJECT_ROTATIONS.indexOf(placeRotation) + 1) % OBJECT_ROTATIONS.length];
   renderEditorContext();
   if (lastHoverTile) updateGhost(lastHoverTile);
+}
+
+function revalidatePlacedObjects() {
+  const keep = [];
+  let returned = 0;
+  for (const obj of placedObjects) {
+    if (itemMeta(obj.type) && objectFitsBounds(obj) && !keep.some(other => objectsOverlap(obj, other))) {
+      keep.push(obj);
+    } else {
+      if (itemMeta(obj.type)) addInventory(obj.type, 1);
+      returned += 1;
+    }
+  }
+  if (returned > 0) {
+    placedObjects = keep;
+    renderObjectsLayer();
+    saveMapToStorage();
+    showToast(`📦 배치 불가능해진 오브젝트 ${returned}개를 인벤토리로 회수했습니다`);
+  }
 }
 
 function applyTerrainBrush(center) {
@@ -976,6 +1182,258 @@ function renderInlineEditorStats(extra = '') {
     <span>${Object.entries(counts).map(([zone, count]) => `${zoneMeta[zone]?.icon || ''} ${zone}: ${count}`).join(' · ')}</span>
     ${extra ? `<span class="good">${extra}</span>` : ''}
   `;
+}
+
+/* ---------- village panel (level + upgrade) ---------- */
+
+function levelMetaOf(level) {
+  return (projectData?.levels || []).find(l => l.level === level) || null;
+}
+
+function renderVillagePanel() {
+  const level = gameState.village.level;
+  const meta = levelMetaOf(level);
+  const next = levelMetaOf(level + 1);
+  document.querySelector('#land-name').textContent = projectData.land.name;
+  document.querySelector('#land-level').textContent = `Lv.${level} ${meta?.name || ''}`;
+  document.querySelector('#land-summary').textContent = `${projectData.land.address} · ${projectData.land.areaPyeongApprox}평`;
+  document.querySelector('#level-fill').style.width = `${Math.min(100, (level / maxVillageLevel()) * 100)}%`;
+
+  const box = document.querySelector('#upgrade-box');
+  if (!box) return;
+  if (!next) {
+    box.innerHTML = '<p class="upgrade-note">🏆 최고 레벨 달성</p>';
+    return;
+  }
+  const reqs = gameState.levelRequirements[level + 1] || [];
+  if (reqs.length === 0) {
+    box.innerHTML = `
+      <p class="upgrade-target">다음: Lv.${level + 1} ${next.name}</p>
+      <p class="upgrade-note">업그레이드 조건 미정의 — ⚙ 관리 → 레벨 조건에서 필요한 아이템을 정의하세요.</p>
+      <button class="upgrade-button" disabled>⬆ 업그레이드</button>
+    `;
+    return;
+  }
+  const rows = reqs.map(rq => {
+    const it = itemMeta(rq.item);
+    const have = ownedOf(rq.item);
+    const met = have >= rq.count;
+    return `<div class="req-row ${met ? 'met' : ''}"><span>${it?.icon || '📦'} ${it?.label || rq.item}</span><b>${have} / ${rq.count}</b><i>${met ? '✓' : '✗'}</i></div>`;
+  }).join('');
+  const allMet = reqs.every(rq => ownedOf(rq.item) >= rq.count);
+  box.innerHTML = `
+    <p class="upgrade-target">다음: Lv.${level + 1} ${next.name}</p>
+    <div class="req-list">${rows}</div>
+    <button class="upgrade-button" id="village-upgrade" ${allMet ? '' : 'disabled'}>⬆ Lv.${level + 1}로 업그레이드</button>
+  `;
+  const btn = document.querySelector('#village-upgrade');
+  if (btn && allMet) {
+    btn.addEventListener('click', () => {
+      gameState.village.level += 1;
+      saveGameState();
+      showToast(`🎉 마을 레벨 업! Lv.${gameState.village.level} ${levelMetaOf(gameState.village.level)?.name || ''}`);
+      renderGame();
+      renderEditorContext();
+    });
+  }
+}
+
+function renderLevels() {
+  const currentLevel = gameState.village.level;
+  document.querySelector('#levels').innerHTML = (projectData.levels || []).map(level => `
+    <article class="era ${level.level === currentLevel ? 'current' : level.level < currentLevel ? 'done' : 'locked'}">
+      <b>Lv.${level.level}</b><div><strong>${level.name}</strong><p>${level.description}</p></div>
+    </article>
+  `).join('');
+}
+
+/* ---------- quest board ---------- */
+
+function questById(id) {
+  return gameState.quests.find(q => q.id === id) || null;
+}
+
+function isQuestVisible(q) {
+  if ((q.unlockLevel || 0) > gameState.village.level) return false;
+  if (q.prereq) {
+    const pre = questById(q.prereq);
+    if (pre && pre.status !== 'done') return false;
+  }
+  return true;
+}
+
+function rewardText(rewards) {
+  if (!rewards?.length) return '';
+  return rewards.map(rw => `${itemMeta(rw.item)?.icon || '📦'} ${itemMeta(rw.item)?.label || rw.item} ×${rw.count}`).join(' · ');
+}
+
+function renderQuestBoard() {
+  const listEl = document.querySelector('#quests');
+  if (!listEl) return;
+  const groups = {
+    todo: gameState.quests.filter(q => q.status === 'todo' && isQuestVisible(q)),
+    doing: gameState.quests.filter(q => q.status === 'doing'),
+    done: gameState.quests.filter(q => q.status === 'done')
+  };
+  document.querySelectorAll('[data-quest-tab]').forEach(btn => {
+    const tab = btn.dataset.questTab;
+    btn.classList.toggle('active', tab === activeQuestTab);
+    btn.innerHTML = `${{ todo: '가능', doing: '진행', done: '완료' }[tab]} <b>${groups[tab].length}</b>`;
+  });
+  const quests = groups[activeQuestTab];
+  if (!quests.length) {
+    listEl.innerHTML = `<p class="quest-empty">${{
+      todo: '수행 가능한 퀘스트가 없습니다. 레벨 업 또는 선행 퀘스트 완료로 해금됩니다.',
+      doing: '진행 중인 퀘스트가 없습니다. 가능 탭에서 퀘스트를 시작하세요.',
+      done: '완료한 퀘스트가 아직 없습니다.'
+    }[activeQuestTab]}</p>`;
+    return;
+  }
+  listEl.innerHTML = quests.map(q => {
+    const rewards = rewardText(q.rewards);
+    const confirming = pendingCompleteId === q.id;
+    return `
+    <article class="quest q-${q.status}" data-quest-id="${q.id}">
+      <span>QUEST${q.unlockLevel ? ` · Lv.${q.unlockLevel}+` : ''}</span>
+      <h3>${q.title}</h3>
+      ${q.desc ? `<p>${q.desc}</p>` : ''}
+      ${q.method ? `<p class="q-method">▶ ${q.method}</p>` : ''}
+      ${rewards ? `<div class="q-rewards">🎁 ${rewards}</div>` : ''}
+      ${q.status === 'todo' ? '<button class="q-action" data-quest-act="start">▶ 수행하기</button>' : ''}
+      ${q.status === 'doing' ? `
+        <div class="q-doing-row">
+          <button class="q-action ${confirming ? 'confirm' : ''}" data-quest-act="complete">${confirming ? '✓ 한 번 더 클릭하면 완료' : '✅ 완료하기'}</button>
+          <button class="q-cancel" data-quest-act="cancel" title="가능 목록으로 되돌리기">↩</button>
+        </div>
+        <b>담당: ${q.assignee || PLAYER_NAME}</b>` : ''}
+      ${q.status === 'done' ? `<b class="q-done-badge">✓ 완료${q.assignee ? ` · ${q.assignee}` : ''}</b>` : ''}
+    </article>
+  `;
+  }).join('');
+}
+
+function setupQuestBoard() {
+  document.querySelectorAll('[data-quest-tab]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      activeQuestTab = btn.dataset.questTab;
+      clearPendingComplete();
+      renderQuestBoard();
+    });
+  });
+  document.querySelector('#quests').addEventListener('click', event => {
+    const actBtn = event.target.closest('[data-quest-act]');
+    if (!actBtn) return;
+    const card = event.target.closest('[data-quest-id]');
+    const quest = questById(card?.dataset.questId);
+    if (!quest) return;
+    const act = actBtn.dataset.questAct;
+    if (act === 'start' && quest.status === 'todo') {
+      quest.status = 'doing';
+      quest.assignee = PLAYER_NAME;
+      saveGameState();
+      showToast(`▶ 퀘스트 시작: ${quest.title}`);
+      activeQuestTab = 'doing';
+      renderQuestBoard();
+      return;
+    }
+    if (act === 'cancel' && quest.status === 'doing') {
+      quest.status = 'todo';
+      quest.assignee = '';
+      clearPendingComplete();
+      saveGameState();
+      renderQuestBoard();
+      return;
+    }
+    if (act === 'complete' && quest.status === 'doing') {
+      if (pendingCompleteId !== quest.id) {
+        clearPendingComplete();
+        pendingCompleteId = quest.id;
+        pendingCompleteTimer = setTimeout(() => { clearPendingComplete(); renderQuestBoard(); }, 4000);
+        renderQuestBoard();
+        return;
+      }
+      clearPendingComplete();
+      completeQuest(quest);
+    }
+  });
+}
+
+function clearPendingComplete() {
+  pendingCompleteId = null;
+  if (pendingCompleteTimer) { clearTimeout(pendingCompleteTimer); pendingCompleteTimer = null; }
+}
+
+function completeQuest(quest) {
+  quest.status = 'done';
+  for (const rw of quest.rewards || []) addInventory(rw.item, rw.count);
+  saveGameState();
+  const rewards = rewardText(quest.rewards);
+  showToast(`✅ ${quest.title} 완료!${rewards ? ` 보상: ${rewards}` : ''}`);
+  activeQuestTab = 'done';
+  renderGame();
+}
+
+/* ---------- inventory ---------- */
+
+function renderInventory() {
+  const el = document.querySelector('#inventory');
+  if (!el) return;
+  const entries = Object.entries(gameState.items);
+  if (!entries.length) {
+    el.innerHTML = '<p class="quest-empty">아이템이 없습니다. ⚙ 관리 → 아이템에서 정의하세요.</p>';
+    return;
+  }
+  el.innerHTML = entries.map(([key, it]) => {
+    const locked = !isItemUnlocked(key);
+    const stock = inventoryOf(key);
+    const placed = placedCountOf(key);
+    return `
+    <button class="inv-card ${locked ? 'locked' : ''} ${!locked && stock === 0 ? 'empty' : ''}" data-inv-item="${key}"
+      title="${locked ? `Lv.${it.unlockLevel}에 해금` : `${it.label} ${it.w}×${it.h}m — 클릭하면 설치 모드`}">
+      <span class="inv-icon">${locked ? '🔒' : it.icon}</span>
+      <small>${it.label}</small>
+      <i>${it.w}×${it.h}m${locked ? ` · Lv.${it.unlockLevel}` : ''}</i>
+      ${!locked ? `<b class="inv-count">${stock}</b>` : ''}
+      ${!locked && placed ? `<em class="inv-placed">설치 ${placed}</em>` : ''}
+    </button>
+  `;
+  }).join('');
+  renderVillagePanel();
+}
+
+function setupInventory() {
+  document.querySelector('#inventory').addEventListener('click', event => {
+    const card = event.target.closest('[data-inv-item]');
+    if (!card) return;
+    const key = card.dataset.invItem;
+    if (!isItemUnlocked(key)) {
+      showToast(`🔒 ${itemMeta(key)?.label || ''}은(는) 마을 Lv.${gameState.items[key].unlockLevel}에 해금됩니다`);
+      return;
+    }
+    if (inventoryOf(key) <= 0) {
+      showToast(`📦 ${itemMeta(key)?.label || ''} 보유 없음 — 퀘스트 보상으로 획득하세요`);
+      return;
+    }
+    placeType = key;
+    if (!editorEnabled) setEditorEnabled(true);
+    setEditorTool('place');
+    document.querySelector('#map-frame-wrap')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  });
+}
+
+/* ---------- toast ---------- */
+
+function showToast(text) {
+  const toast = document.querySelector('#toast');
+  if (!toast) return;
+  toast.textContent = text;
+  toast.hidden = false;
+  toast.classList.add('show');
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => {
+    toast.classList.remove('show');
+    toastTimer = setTimeout(() => { toast.hidden = true; }, 250);
+  }, 2800);
 }
 
 /* ---------- overlay (augment image) ---------- */
@@ -1216,22 +1674,29 @@ function setEditorTool(tool) {
 function renderEditorContext() {
   const panel = mapDom.editorContext;
   if (!panel) return;
-  if (!editorEnabled || !['paint', 'terrain', 'place'].includes(editorTool)) {
+  if (!editorEnabled || !['paint', 'erase', 'terrain', 'place'].includes(editorTool)) {
     panel.hidden = true;
     panel.innerHTML = '';
     return;
   }
   if (editorTool === 'place') {
+    if (!itemMeta(placeType)) placeType = Object.keys(gameState.items)[0] || '';
     const { w, h } = footprintOf(placeType, placeRotation);
     panel.innerHTML = `
       <div class="context-section">
         <h4>오브젝트</h4>
         <div class="object-palette">
-          ${Object.entries(objectTypes).map(([key, meta]) => `
-            <button class="object-card ${placeType === key ? 'active' : ''}" data-place-type="${key}" title="${meta.label} ${meta.w}×${meta.h}m">
-              <span>${meta.icon}</span><small>${meta.label}</small><i>${meta.w}×${meta.h}m</i>
+          ${Object.entries(gameState.items).map(([key, meta]) => {
+            const locked = !isItemUnlocked(key);
+            const stock = inventoryOf(key);
+            return `
+            <button class="object-card ${placeType === key ? 'active' : ''} ${locked ? 'locked' : ''} ${!locked && stock === 0 ? 'empty' : ''}"
+              data-place-type="${key}" ${locked ? 'data-locked="1"' : ''}
+              title="${locked ? `Lv.${meta.unlockLevel}에 해금` : `${meta.label} ${meta.w}×${meta.h}m · 보유 ${stock}`}">
+              <span>${locked ? '🔒' : meta.icon}</span><small>${meta.label}</small><i>${locked ? `Lv.${meta.unlockLevel}` : `보유 ${stock}`}</i>
             </button>
-          `).join('')}
+          `;
+          }).join('')}
         </div>
       </div>
       <div class="context-section">
@@ -1251,13 +1716,17 @@ function renderEditorContext() {
     <div class="context-section">
       <h4>구역</h4>
       <div class="zone-palette">
-        ${Object.entries(zoneMeta).map(([key, meta]) => `
-          <button class="zone-swatch ${paintZone === key ? 'active' : ''}" data-paint-zone="${key}" title="${meta.label}">
-            <i style="background:${meta.color}"></i><span>${meta.icon}</span>
+        ${Object.entries(zoneMeta).map(([key, meta]) => {
+          const locked = !isZoneUnlocked(key);
+          return `
+          <button class="zone-swatch ${paintZone === key ? 'active' : ''} ${locked ? 'locked' : ''}" data-paint-zone="${key}" ${locked ? 'data-locked="1"' : ''}
+            title="${meta.label}${locked ? ` — Lv.${meta.unlockLevel}에 해금` : ''}">
+            <i style="background:${meta.color}"></i><span>${locked ? '🔒' : meta.icon}</span>
           </button>
-        `).join('')}
+        `;
+        }).join('')}
       </div>
-      <p class="zone-name">${zoneMeta[paintZone].icon} ${zoneMeta[paintZone].label}</p>
+      <p class="zone-name">${zoneMeta[paintZone]?.icon || ''} ${zoneMeta[paintZone]?.label || ''}</p>
     </div>
   ` : '';
   const terrainHtml = editorTool === 'terrain' ? `
@@ -1282,7 +1751,7 @@ function renderEditorContext() {
     <div class="context-section">
       <h4>브러시</h4>
       <div class="brush-seg">
-        ${[1, 3, 5, 10].map(size => `<button class="${brushSize === size ? 'active' : ''}" data-brush="${size}">${size}m</button>`).join('')}
+        ${[1, 3, 5].map(size => `<button class="${brushSize === size ? 'active' : ''}" data-brush="${size}">${size}m</button>`).join('')}
       </div>
     </div>
   `;
@@ -1320,12 +1789,20 @@ function setupInlineEditor() {
   mapDom.editorContext.addEventListener('click', event => {
     const swatch = event.target.closest('[data-paint-zone]');
     if (swatch) {
+      if (swatch.dataset.locked) {
+        showToast(`🔒 ${gameState.zones[swatch.dataset.paintZone]?.label || ''}은(는) 마을 Lv.${gameState.zones[swatch.dataset.paintZone]?.unlockLevel}에 해금됩니다`);
+        return;
+      }
       paintZone = swatch.dataset.paintZone;
       renderEditorContext();
       return;
     }
     const placeCard = event.target.closest('[data-place-type]');
     if (placeCard) {
+      if (placeCard.dataset.locked) {
+        showToast(`🔒 ${itemMeta(placeCard.dataset.placeType)?.label || ''}은(는) 마을 Lv.${gameState.items[placeCard.dataset.placeType]?.unlockLevel}에 해금됩니다`);
+        return;
+      }
       placeType = placeCard.dataset.placeType;
       renderEditorContext();
       if (lastHoverTile) updateGhost(lastHoverTile);
@@ -1352,7 +1829,6 @@ function setupInlineEditor() {
       brushSize = Number.parseInt(brush.dataset.brush, 10) || 1;
       renderEditorContext();
       renderInlineEditorStats();
-      if (lastHoverTile) updateBrushHover(lastHoverTile);
     }
   });
 
@@ -1365,13 +1841,14 @@ function setupInlineEditor() {
   document.querySelector('#apply-map-size').addEventListener('click', applyMapSizeFromInputs);
   syncMapSizeInputs();
   document.querySelector('#export-inline-map').addEventListener('click', exportInlineMap);
-  document.querySelector('#save-inline-map').addEventListener('click', () => { saveMapToStorage(); renderInlineEditorStats('saved locally'); });
+  document.querySelector('#save-inline-map').addEventListener('click', () => { saveMapToStorage(); saveGameState(); renderInlineEditorStats('saved locally'); });
   document.querySelector('#load-inline-map').addEventListener('click', () => document.querySelector('#inline-map-file').click());
   document.querySelector('#inline-map-file').addEventListener('change', importInlineMap);
 
   window.addEventListener('keydown', event => {
     if (event.target instanceof Element && event.target.matches('input, select, textarea')) return;
     if (event.key === 'Escape') {
+      if (mapDom.adminModal && !mapDom.adminModal.hidden) { closeAdmin(); return; }
       if (mapDom.editorSettings && !mapDom.editorSettings.hidden) { closeEditorSettings(); return; }
       if (measurePoints.length) { measurePoints = []; updateMeasureLayer(); renderInlineEditorStats(); return; }
       if (selectedTileKey) { clearSelection(); return; }
@@ -1392,10 +1869,411 @@ function setupInlineEditor() {
   });
 }
 
+/* ---------- admin modal ---------- */
+
+function setupAdmin() {
+  document.querySelector('#open-admin').addEventListener('click', openAdmin);
+  document.querySelector('#close-admin').addEventListener('click', closeAdmin);
+  mapDom.adminModal.addEventListener('click', event => {
+    if (event.target === mapDom.adminModal) closeAdmin();
+  });
+  document.querySelectorAll('[data-admin-tab]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      adminTab = btn.dataset.adminTab;
+      document.querySelectorAll('[data-admin-tab]').forEach(b => b.classList.toggle('active', b.dataset.adminTab === adminTab));
+      renderAdmin();
+    });
+  });
+  mapDom.adminBody.addEventListener('input', onAdminInput);
+  mapDom.adminBody.addEventListener('click', onAdminClick);
+}
+
+function openAdmin() {
+  mapDom.adminModal.hidden = false;
+  document.body.classList.add('modal-open');
+  renderAdmin();
+}
+
+function closeAdmin() {
+  mapDom.adminModal.hidden = true;
+  document.body.classList.remove('modal-open');
+}
+
+function levelOptions(selected) {
+  let html = '';
+  for (let lvl = 0; lvl <= maxVillageLevel(); lvl += 1) {
+    html += `<option value="${lvl}" ${lvl === selected ? 'selected' : ''}>Lv.${lvl}</option>`;
+  }
+  return html;
+}
+
+function itemOptions(selected) {
+  return Object.entries(gameState.items)
+    .map(([key, it]) => `<option value="${key}" ${key === selected ? 'selected' : ''}>${it.icon} ${it.label}</option>`)
+    .join('');
+}
+
+function renderAdmin() {
+  const body = mapDom.adminBody;
+  if (adminTab === 'zones') { body.innerHTML = renderAdminZones(); return; }
+  if (adminTab === 'items') { body.innerHTML = renderAdminItems(); return; }
+  if (adminTab === 'quests') { body.innerHTML = renderAdminQuests(); return; }
+  body.innerHTML = renderAdminLevels();
+}
+
+function renderAdminZones() {
+  const themeColors = themes[currentTheme]?.colors || {};
+  const counts = {};
+  tileState.forEach(tile => { counts[tile.zone] = (counts[tile.zone] || 0) + 1; });
+  const rows = Object.entries(gameState.zones).map(([key, zone]) => `
+    <div class="admin-row" data-zone-key="${key}">
+      <input type="color" data-field="color" value="${zone.color || themeColors[key] || '#5d7252'}" title="구역 색상${zone.color ? '' : ' (현재 테마색)'}" />
+      <input type="text" class="icon-input" data-field="icon" value="${zone.icon || ''}" maxlength="4" title="아이콘 (이모지)" />
+      <input type="text" class="label-input" data-field="label" value="${zone.label}" placeholder="구역 이름" />
+      <label class="dim">해금 <select data-field="unlockLevel">${levelOptions(zone.unlockLevel || 0)}</select></label>
+      <span class="dim">${counts[key] || 0} 타일</span>
+      ${zone.color ? '<button data-act="reset-zone-color" title="테마 색상으로 되돌리기">테마색</button>' : ''}
+      ${key === 'wild' ? '<span class="dim">기본 구역</span>' : '<button class="danger" data-act="delete-zone">삭제</button>'}
+    </div>
+  `).join('');
+  return `
+    <p class="admin-help">구역(지형 타입)의 이름·색상·해금 레벨을 편집합니다. 색상을 바꾸면 테마와 무관하게 그 색이 사용됩니다. 구역을 삭제하면 해당 타일은 Wild로 되돌아갑니다.</p>
+    ${rows}
+    <button class="admin-add" data-act="add-zone">＋ 새 구역 추가</button>
+  `;
+}
+
+function renderAdminItems() {
+  const rows = Object.entries(gameState.items).map(([key, it]) => {
+    const placed = placedCountOf(key);
+    return `
+    <div class="admin-row" data-item-key="${key}">
+      <input type="text" class="icon-input" data-field="icon" value="${it.icon}" maxlength="4" title="아이콘 (이모지)" />
+      <input type="text" class="label-input" data-field="label" value="${it.label}" placeholder="아이템 이름" />
+      <label class="dim">크기 <input type="number" class="num-input" data-field="w" value="${it.w}" min="1" max="40" /> × <input type="number" class="num-input" data-field="h" value="${it.h}" min="1" max="40" /> m</label>
+      <label class="dim">해금 <select data-field="unlockLevel">${levelOptions(it.unlockLevel || 0)}</select></label>
+      <span class="inv-stepper"><button data-act="inv-minus" title="보유 −1">−</button><b title="보유 수량">${inventoryOf(key)}</b><button data-act="inv-plus" title="보유 +1">＋</button></span>
+      <span class="dim">설치 ${placed}</span>
+      <button class="danger" data-act="delete-item">삭제</button>
+    </div>
+  `;
+  }).join('');
+  return `
+    <p class="admin-help">아이템의 이름·아이콘(이모지)·크기·해금 레벨을 편집합니다. 보유 수량(±)으로 인벤토리를 직접 조정할 수 있습니다. 크기를 바꾸면 배치가 불가능해진 설치물은 인벤토리로 회수됩니다.</p>
+    ${rows}
+    <button class="admin-add" data-act="add-item">＋ 새 아이템 추가</button>
+  `;
+}
+
+function renderAdminQuests() {
+  const blocks = gameState.quests.map(q => `
+    <div class="admin-quest" data-quest-id="${q.id}">
+      <div class="aq-row">
+        <input type="text" class="label-input grow" data-field="title" value="${q.title}" placeholder="퀘스트명" />
+        <select data-field="status" title="상태">
+          <option value="todo" ${q.status === 'todo' ? 'selected' : ''}>가능</option>
+          <option value="doing" ${q.status === 'doing' ? 'selected' : ''}>진행</option>
+          <option value="done" ${q.status === 'done' ? 'selected' : ''}>완료</option>
+        </select>
+        <button class="danger" data-act="delete-quest">삭제</button>
+      </div>
+      <textarea data-field="desc" rows="2" placeholder="설명">${q.desc}</textarea>
+      <textarea data-field="method" rows="2" placeholder="수행 방법">${q.method}</textarea>
+      <div class="aq-row">
+        <label class="dim">해금 <select data-field="unlockLevel">${levelOptions(q.unlockLevel || 0)}</select></label>
+        <label class="dim">선행 퀘스트
+          <select data-field="prereq">
+            <option value="">(없음)</option>
+            ${gameState.quests.filter(other => other.id !== q.id).map(other => `<option value="${other.id}" ${q.prereq === other.id ? 'selected' : ''}>${other.title}</option>`).join('')}
+          </select>
+        </label>
+      </div>
+      <div class="aq-rewards">
+        <span class="dim">보상</span>
+        ${(q.rewards || []).map((rw, idx) => `
+          <span class="reward-row" data-reward-index="${idx}">
+            <select data-field="reward-item">${itemOptions(rw.item)}</select>
+            <input type="number" class="num-input" data-field="reward-count" value="${rw.count}" min="1" max="99" />
+            <button data-act="del-reward" title="보상 제거">✕</button>
+          </span>
+        `).join('')}
+        <button data-act="add-reward">＋ 보상</button>
+      </div>
+    </div>
+  `).join('');
+  return `
+    <p class="admin-help">퀘스트를 정의합니다. 해금 레벨과 선행 퀘스트(완료되어야 등장)로 발생 조건을 제어하고, 완료 시 보상 아이템이 인벤토리에 지급됩니다.</p>
+    ${blocks}
+    <button class="admin-add" data-act="add-quest">＋ 새 퀘스트 추가</button>
+  `;
+}
+
+function renderAdminLevels() {
+  if (!Object.keys(gameState.items).length) {
+    return '<p class="admin-help">레벨 조건에 쓸 아이템이 없습니다. 먼저 아이템 탭에서 아이템을 정의하세요.</p>';
+  }
+  const blocks = [];
+  for (let lvl = 1; lvl <= maxVillageLevel(); lvl += 1) {
+    const meta = levelMetaOf(lvl);
+    const reqs = gameState.levelRequirements[lvl] || [];
+    blocks.push(`
+      <div class="admin-level" data-level="${lvl}">
+        <div class="aq-row"><strong>Lv.${lvl} ${meta?.name || ''}</strong><span class="dim">${meta?.description || ''}</span></div>
+        <div class="aq-rewards">
+          <span class="dim">필요 아이템</span>
+          ${reqs.map((rq, idx) => `
+            <span class="reward-row" data-req-index="${idx}">
+              <select data-field="req-item">${itemOptions(rq.item)}</select>
+              <input type="number" class="num-input" data-field="req-count" value="${rq.count}" min="1" max="99" />
+              <button data-act="del-req" title="조건 제거">✕</button>
+            </span>
+          `).join('')}
+          <button data-act="add-req">＋ 아이템</button>
+        </div>
+      </div>
+    `);
+  }
+  return `
+    <p class="admin-help">레벨별 업그레이드에 필요한 아이템을 정의합니다. 모두 수집(보유+설치)하면 마을 스탯 창의 업그레이드 버튼이 활성화됩니다.</p>
+    ${blocks.join('')}
+  `;
+}
+
+function onAdminInput(event) {
+  const field = event.target.dataset.field;
+  if (!field) return;
+  const value = event.target.value;
+  const zoneRow = event.target.closest('[data-zone-key]');
+  if (zoneRow) {
+    const zone = gameState.zones[zoneRow.dataset.zoneKey];
+    if (!zone) return;
+    if (field === 'color') zone.color = value;
+    else if (field === 'icon') zone.icon = value;
+    else if (field === 'label') zone.label = value;
+    else if (field === 'unlockLevel') zone.unlockLevel = Number.parseInt(value, 10) || 0;
+    saveGameState();
+    repaintTiles();
+    updateLegend();
+    renderEditorContext();
+    renderInlineEditorStats();
+    return;
+  }
+  const itemRow = event.target.closest('[data-item-key]');
+  if (itemRow) {
+    const item = gameState.items[itemRow.dataset.itemKey];
+    if (!item) return;
+    if (field === 'icon') item.icon = value;
+    else if (field === 'label') item.label = value;
+    else if (field === 'w' || field === 'h') {
+      item[field] = Math.max(1, Math.min(40, Number.parseInt(value, 10) || 1));
+      revalidatePlacedObjects();
+    } else if (field === 'unlockLevel') item.unlockLevel = Number.parseInt(value, 10) || 0;
+    saveGameState();
+    renderObjectsLayer();
+    renderGame();
+    renderEditorContext();
+    return;
+  }
+  const questBlock = event.target.closest('[data-quest-id]');
+  if (questBlock) {
+    const quest = questById(questBlock.dataset.questId);
+    if (!quest) return;
+    const rewardRow = event.target.closest('[data-reward-index]');
+    if (rewardRow) {
+      const reward = quest.rewards[Number.parseInt(rewardRow.dataset.rewardIndex, 10)];
+      if (!reward) return;
+      if (field === 'reward-item') reward.item = value;
+      else if (field === 'reward-count') reward.count = Math.max(1, Number.parseInt(value, 10) || 1);
+    } else if (field === 'title') quest.title = value;
+    else if (field === 'desc') quest.desc = value;
+    else if (field === 'method') quest.method = value;
+    else if (field === 'unlockLevel') quest.unlockLevel = Number.parseInt(value, 10) || 0;
+    else if (field === 'prereq') quest.prereq = value || null;
+    else if (field === 'status') { quest.status = value; clearPendingComplete(); }
+    saveGameState();
+    renderQuestBoard();
+    return;
+  }
+  const levelBlock = event.target.closest('[data-level]');
+  if (levelBlock) {
+    const lvl = Number.parseInt(levelBlock.dataset.level, 10);
+    const reqs = gameState.levelRequirements[lvl] || [];
+    const reqRow = event.target.closest('[data-req-index]');
+    if (!reqRow) return;
+    const req = reqs[Number.parseInt(reqRow.dataset.reqIndex, 10)];
+    if (!req) return;
+    if (field === 'req-item') req.item = value;
+    else if (field === 'req-count') req.count = Math.max(1, Number.parseInt(value, 10) || 1);
+    saveGameState();
+    renderVillagePanel();
+  }
+}
+
+function armDanger(button) {
+  if (button.dataset.armed) {
+    delete button.dataset.armed;
+    return true;
+  }
+  button.dataset.armed = '1';
+  const original = button.textContent;
+  button.textContent = '확인?';
+  setTimeout(() => {
+    if (button.isConnected && button.dataset.armed) {
+      delete button.dataset.armed;
+      button.textContent = original;
+    }
+  }, 2500);
+  return false;
+}
+
+function onAdminClick(event) {
+  const actBtn = event.target.closest('[data-act]');
+  if (!actBtn) return;
+  const act = actBtn.dataset.act;
+
+  if (act === 'add-zone') {
+    const key = makeId('zone');
+    gameState.zones[key] = { label: '새 구역', icon: '🏷️', color: '#5a8a5a', unlockLevel: 0 };
+    saveGameState();
+    renderAdmin();
+    renderEditorContext();
+    return;
+  }
+  if (act === 'add-item') {
+    const key = makeId('item');
+    gameState.items[key] = { label: '새 아이템', icon: '📦', w: 1, h: 1, unlockLevel: 0, tint: null };
+    saveGameState();
+    renderAdmin();
+    renderGame();
+    renderEditorContext();
+    return;
+  }
+  if (act === 'add-quest') {
+    gameState.quests.push({ id: makeId('q'), title: '새 퀘스트', desc: '', method: '', unlockLevel: 0, prereq: null, rewards: [], status: 'todo', assignee: '' });
+    saveGameState();
+    renderAdmin();
+    renderQuestBoard();
+    return;
+  }
+
+  const zoneRow = event.target.closest('[data-zone-key]');
+  if (zoneRow) {
+    const key = zoneRow.dataset.zoneKey;
+    if (act === 'reset-zone-color') {
+      gameState.zones[key].color = null;
+      saveGameState();
+      repaintTiles();
+      updateLegend();
+      renderAdmin();
+      renderEditorContext();
+      return;
+    }
+    if (act === 'delete-zone' && key !== 'wild') {
+      if (!armDanger(actBtn)) return;
+      delete gameState.zones[key];
+      let changed = 0;
+      tileState.forEach(tile => { if (tile.zone === key) { tile.zone = 'wild'; changed += 1; } });
+      if (paintZone === key) paintZone = 'wild';
+      if (focusZone === key) focusZone = null;
+      saveGameState();
+      saveMapToStorage();
+      repaintTiles();
+      updateBoundaries();
+      updateLegend();
+      renderAdmin();
+      renderEditorContext();
+      renderInlineEditorStats();
+      showToast(`구역 삭제됨 — 타일 ${changed}개를 Wild로 되돌렸습니다`);
+      return;
+    }
+  }
+
+  const itemRow = event.target.closest('[data-item-key]');
+  if (itemRow) {
+    const key = itemRow.dataset.itemKey;
+    if (act === 'inv-plus') { addInventory(key, 1); renderAdmin(); renderGame(); return; }
+    if (act === 'inv-minus') { addInventory(key, -1); renderAdmin(); renderGame(); return; }
+    if (act === 'delete-item') {
+      if (!armDanger(actBtn)) return;
+      const removedPlaced = placedObjects.filter(obj => obj.type === key).length;
+      placedObjects = placedObjects.filter(obj => obj.type !== key);
+      delete gameState.items[key];
+      delete gameState.inventory[key];
+      for (const quest of gameState.quests) quest.rewards = (quest.rewards || []).filter(rw => rw.item !== key);
+      for (const lvl of Object.keys(gameState.levelRequirements)) {
+        gameState.levelRequirements[lvl] = gameState.levelRequirements[lvl].filter(rq => rq.item !== key);
+      }
+      if (placeType === key) placeType = Object.keys(gameState.items)[0] || '';
+      saveGameState();
+      saveMapToStorage();
+      renderObjectsLayer();
+      renderAdmin();
+      renderGame();
+      renderEditorContext();
+      if (removedPlaced) showToast(`아이템 삭제됨 — 설치돼 있던 ${removedPlaced}개도 제거했습니다`);
+      return;
+    }
+  }
+
+  const questBlock = event.target.closest('[data-quest-id]');
+  if (questBlock) {
+    const quest = questById(questBlock.dataset.questId);
+    if (!quest) return;
+    if (act === 'add-reward') {
+      const firstItem = Object.keys(gameState.items)[0];
+      if (!firstItem) { showToast('먼저 아이템을 정의하세요'); return; }
+      quest.rewards.push({ item: firstItem, count: 1 });
+      saveGameState();
+      renderAdmin();
+      renderQuestBoard();
+      return;
+    }
+    if (act === 'del-reward') {
+      const idx = Number.parseInt(event.target.closest('[data-reward-index]').dataset.rewardIndex, 10);
+      quest.rewards.splice(idx, 1);
+      saveGameState();
+      renderAdmin();
+      renderQuestBoard();
+      return;
+    }
+    if (act === 'delete-quest') {
+      if (!armDanger(actBtn)) return;
+      gameState.quests = gameState.quests.filter(q => q.id !== quest.id);
+      for (const other of gameState.quests) if (other.prereq === quest.id) other.prereq = null;
+      saveGameState();
+      renderAdmin();
+      renderQuestBoard();
+      return;
+    }
+  }
+
+  const levelBlock = event.target.closest('[data-level]');
+  if (levelBlock) {
+    const lvl = Number.parseInt(levelBlock.dataset.level, 10);
+    if (act === 'add-req') {
+      const firstItem = Object.keys(gameState.items)[0];
+      if (!firstItem) { showToast('먼저 아이템을 정의하세요'); return; }
+      if (!gameState.levelRequirements[lvl]) gameState.levelRequirements[lvl] = [];
+      gameState.levelRequirements[lvl].push({ item: firstItem, count: 1 });
+      saveGameState();
+      renderAdmin();
+      renderVillagePanel();
+      return;
+    }
+    if (act === 'del-req') {
+      const idx = Number.parseInt(event.target.closest('[data-req-index]').dataset.reqIndex, 10);
+      gameState.levelRequirements[lvl].splice(idx, 1);
+      saveGameState();
+      renderAdmin();
+      renderVillagePanel();
+    }
+  }
+}
+
 /* ---------- persistence ---------- */
 
-function buildMapPayload() {
-  return {
+function buildMapPayload(includeGame = false) {
+  const payload = {
     unit: {
       tileWidthMeters: 1,
       tileHeightMeters: 1,
@@ -1408,10 +2286,12 @@ function buildMapPayload() {
     tiles: [...tileState.values()],
     objects: placedObjects.map(obj => ({ ...obj }))
   };
+  if (includeGame) payload.game = gameState;
+  return payload;
 }
 
 function exportInlineMap() {
-  const payload = buildMapPayload();
+  const payload = buildMapPayload(true);
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -1422,7 +2302,7 @@ function exportInlineMap() {
 }
 
 function saveMapToStorage() {
-  localStorage.setItem(MAP_STORAGE_KEY, JSON.stringify(buildMapPayload()));
+  localStorage.setItem(MAP_STORAGE_KEY, JSON.stringify(buildMapPayload(false)));
 }
 
 function loadMapFromStorage() {
@@ -1437,6 +2317,10 @@ function loadMapFromStorage() {
 
 function applyMapPayload(payload) {
   if (!payload?.tiles?.length) return false;
+  if (payload.game && typeof payload.game === 'object') {
+    gameState = normalizeGameState(payload.game);
+    saveGameState();
+  }
   tileState.clear();
   const width = clampMapSize(payload.grid?.width || DEFAULT_MAP_WIDTH);
   const height = clampMapSize(payload.grid?.height || DEFAULT_MAP_HEIGHT);
@@ -1445,13 +2329,13 @@ function applyMapPayload(payload) {
     const k = tileKey(tile.q, tile.r);
     const target = tileState.get(k);
     if (!target) continue;
-    if (baseZones[tile.zone]) target.zone = tile.zone;
+    if (gameState.zones[tile.zone]) target.zone = tile.zone;
     if (Number.isFinite(tile.h)) target.h = clampTerrain(tile.h);
   }
   placedObjects = (Array.isArray(payload.objects) ? payload.objects : [])
-    .filter(obj => objectTypes[obj.type] && Number.isInteger(obj.q) && Number.isInteger(obj.r))
+    .filter(obj => gameState.items[obj.type] && Number.isInteger(obj.q) && Number.isInteger(obj.r))
     .map(obj => ({
-      id: obj.id || makeObjectId(),
+      id: obj.id || makeId('obj'),
       type: obj.type,
       q: obj.q,
       r: obj.r,
@@ -1482,6 +2366,8 @@ async function importInlineMap(event) {
     saveMapToStorage();
     measurePoints = [];
     buildMapDom();
+    renderGame();
+    renderEditorContext();
     renderInlineEditorStats('loaded json');
   } catch (error) {
     renderInlineEditorStats(`load failed: ${error.message}`);
@@ -1490,55 +2376,7 @@ async function importInlineMap(event) {
   }
 }
 
-function zoneDescription(zone) {
-  return {
-    wild: '아직 미개척. 보존하거나 나중에 용도 지정 가능.',
-    access: '진입로, 작업동선, 임시 주차 후보.',
-    parking: '차량 진입/주차 후보. 캠핑·작업 동선의 시작점.',
-    camp: '텐트, 데크, 화로 같은 체류 오브젝트 후보.',
-    utility: '물, 전기, 창고, 화장실 같은 기반시설 후보.',
-    restricted: '하천/도로/규제 확인 전까지 잠긴 구역.',
-    garden: '텃밭, 온실, 작물 실험 후보.',
-    rest: '쉼터, 전망, 가족 모임 후보.'
-  }[zone];
-}
-
-function renderLevels(levels, currentLevel) {
-  document.querySelector('#levels').innerHTML = levels.map(level => `
-    <article class="era ${level.level === currentLevel ? 'current' : level.level < currentLevel ? 'done' : 'locked'}">
-      <b>Lv.${level.level}</b><div><strong>${level.name}</strong><p>${level.description}</p></div>
-    </article>
-  `).join('');
-}
-
-function renderActions(actions) {
-  document.querySelector('#actions').innerHTML = actions.map(action => `
-    <article class="action-card ${statusTone[action.status] || ''}">
-      <small>${action.category} · Lv.${action.levelRequired}+</small>
-      <h3>${action.name}</h3>
-      <p>필요: ${action.requires.join(', ')}</p>
-      <div>${action.outputs.map(x => `<span>+ ${x}</span>`).join('')}</div>
-    </article>
-  `).join('');
-}
-
-function renderQuests(quests) {
-  document.querySelector('#quests').innerHTML = quests.map(q => `
-    <article class="quest ${statusTone[q.status] || ''}">
-      <span>QUEST</span><h3>${q.title}</h3><p>${q.notes}</p><b>담당: ${q.assignee}</b>
-    </article>
-  `).join('');
-}
-
-function renderObjects(objects) {
-  document.querySelector('#objects').innerHTML = objects.map(obj => `
-    <article class="object ${statusTone[obj.status] || ''}">
-      <span>${obj.status === 'owned' ? '🎒' : '🔒'}</span>
-      <strong>${obj.name}</strong>
-      <small>${obj.kind} · Lv.${obj.unlockedAtLevel}+</small>
-    </article>
-  `).join('');
-}
+/* ---------- misc panels ---------- */
 
 function renderPlayers(players) {
   document.querySelector('#players').innerHTML = players.map(p => `
