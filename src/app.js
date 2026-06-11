@@ -581,7 +581,9 @@ function setupMapInteractions() {
   svg.addEventListener('pointermove', onTileHover);
   svg.addEventListener('pointerleave', hideHover);
   svg.addEventListener('pointerout', event => {
-    if (!event.relatedTarget || !svg.contains(event.relatedTarget)) hideHover();
+    const leftTile = event.target.closest?.('.square-tile');
+    const enteredTile = event.relatedTarget?.closest?.('.square-tile');
+    if ((leftTile && !enteredTile) || !event.relatedTarget || !svg.contains(event.relatedTarget)) hideHover();
   });
   frame.addEventListener('pointerleave', hideHover);
   mapDom.wrap.addEventListener('pointerleave', hideHover);
