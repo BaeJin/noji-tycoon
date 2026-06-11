@@ -480,7 +480,7 @@ function setupMapInteractions() {
     updateLegend();
   });
 
-  mapDom.selectedCard.addEventListener('click', event => {
+  mapDom.selectedCard?.addEventListener('click', event => {
     if (event.target.closest('.card-close')) clearSelection();
   });
 }
@@ -543,10 +543,10 @@ function handleTileClick(tile, rectEl) {
     renderInlineEditorStats();
     const selected = mapDom.selectedCard;
     if (measurePoints.length === 1) {
-      selected.innerHTML = `<strong>📏 Measure</strong><span>start tile (${tile.q}, ${tile.r})</span><p>끝 타일을 선택하면 거리가 표시됩니다.</p>`;
+      if (selected) selected.innerHTML = `<strong>📏 Measure</strong><span>start tile (${tile.q}, ${tile.r})</span><p>끝 타일을 선택하면 거리가 표시됩니다.</p>`;
     } else {
       const d = distanceMeters(measurePoints[0], measurePoints[1]);
-      selected.innerHTML = `<strong>📏 ${d.toFixed(2)}m</strong><span>center-to-center</span><p>tile (${measurePoints[0].q}, ${measurePoints[0].r}) → (${measurePoints[1].q}, ${measurePoints[1].r})</p>`;
+      if (selected) selected.innerHTML = `<strong>📏 ${d.toFixed(2)}m</strong><span>center-to-center</span><p>tile (${measurePoints[0].q}, ${measurePoints[0].r}) → (${measurePoints[1].q}, ${measurePoints[1].r})</p>`;
     }
     return;
   }
@@ -563,12 +563,15 @@ function selectTile(tile) {
   select.setAttribute('height', size);
   select.setAttribute('visibility', 'visible');
   const meta = getZoneMeta()[tile.zone];
-  mapDom.selectedCard.innerHTML = `
-    <button class="card-close" title="선택 해제">✕</button>
-    <strong>${meta.icon} ${meta.label}</strong>
-    <span>tile (${tile.q}, ${tile.r}) · 1m² · ${PYEONG_PER_TILE.toFixed(3)}평</span>
-    <p>${zoneDescription(tile.zone)}</p>
-  `;
+  const card = mapDom.selectedCard;
+  if (card) {
+    card.innerHTML = `
+      <button class="card-close" title="선택 해제">✕</button>
+      <strong>${meta.icon} ${meta.label}</strong>
+      <span>tile (${tile.q}, ${tile.r}) · 1m² · ${PYEONG_PER_TILE.toFixed(3)}평</span>
+      <p>${zoneDescription(tile.zone)}</p>
+    `;
+  }
 }
 
 function clearSelection() {
@@ -586,7 +589,8 @@ function resetSelectedCard() {
 
 function showTile(tile, suffix = 'edited') {
   const meta = getZoneMeta()[tile.zone];
-  mapDom.selectedCard.innerHTML = `<strong>${meta.icon} ${meta.label}</strong><span>tile (${tile.q}, ${tile.r}) · ${suffix}</span><p>${zoneDescription(tile.zone)}</p>`;
+  const card = mapDom.selectedCard;
+  if (card) card.innerHTML = `<strong>${meta.icon} ${meta.label}</strong><span>tile (${tile.q}, ${tile.r}) · ${suffix}</span><p>${zoneDescription(tile.zone)}</p>`;
 }
 
 /* ---------- brush ---------- */

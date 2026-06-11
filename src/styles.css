@@ -427,40 +427,6 @@ body.editor-mode .map-outer-boundary { stroke: rgba(238, 255, 197, .55); stroke-
 .map-hud-zoom button:hover { border-color: var(--gold); transform: translateY(-1px); }
 #map-zoom-reset { font-size: 11px; font-family: Orbitron, sans-serif; }
 
-/* floating selected-tile card */
-.selected-card {
-  position: absolute;
-  left: 14px;
-  bottom: 14px;
-  z-index: 7;
-  max-width: min(330px, calc(100% - 90px));
-  padding: 12px 14px;
-  border-radius: 16px;
-  border: 1px solid rgba(240,193,90,.35);
-  background: rgba(8, 10, 6, .82);
-  backdrop-filter: blur(8px);
-  color: var(--muted);
-  box-shadow: 0 14px 40px rgba(0,0,0,.45);
-}
-.selected-card strong { display:block; color: var(--text); font-size: 16px; padding-right: 22px; }
-.selected-card span { color: var(--gold); font-size:12px; }
-.selected-card p { margin: 5px 0 0; font-size: 12.5px; }
-.selected-card .card-close {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  width: 24px;
-  height: 24px;
-  border: 1px solid rgba(255,255,255,.16);
-  border-radius: 8px;
-  background: rgba(0,0,0,.3);
-  color: var(--muted);
-  font-size: 11px;
-  cursor: pointer;
-  line-height: 1;
-}
-.selected-card .card-close:hover { color: var(--text); border-color: var(--gold); }
-
 /* hover tooltip */
 .tile-tooltip {
   position: absolute;
@@ -594,7 +560,6 @@ body.editor-mode .map-stage { border-color: rgba(184,224,109,.55); box-shadow: 0
   .resource { min-width: 45%; }
   .map-frame { height: 460px; }
   .object-grid { grid-template-columns:1fr; }
-  .selected-card { max-width: calc(100% - 76px); }
   .group-label { min-width: 100%; }
 }
 
