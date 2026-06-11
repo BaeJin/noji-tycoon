@@ -686,11 +686,13 @@ function loadOverlayState() {
       src: localStorage.getItem('noji-overlay-src') || DEFAULT_OVERLAY_SRC,
       opacity: Number.parseFloat(localStorage.getItem('noji-overlay-opacity') || '0.48'),
       scale: Number.parseFloat(localStorage.getItem('noji-overlay-scale') || '1'),
+      scaleX: Number.parseFloat(localStorage.getItem('noji-overlay-scale-x') || '1'),
+      scaleY: Number.parseFloat(localStorage.getItem('noji-overlay-scale-y') || '1'),
       offsetX: Number.parseFloat(localStorage.getItem('noji-overlay-offset-x') || '0'),
       offsetY: Number.parseFloat(localStorage.getItem('noji-overlay-offset-y') || '0')
     };
   } catch {
-    return { src: DEFAULT_OVERLAY_SRC, opacity: 0.48, scale: 1, offsetX: 0, offsetY: 0 };
+    return { src: DEFAULT_OVERLAY_SRC, opacity: 0.48, scale: 1, scaleX: 1, scaleY: 1, offsetX: 0, offsetY: 0 };
   }
 }
 
@@ -698,6 +700,8 @@ function saveOverlayState() {
   localStorage.setItem('noji-overlay-src', overlayState.src);
   localStorage.setItem('noji-overlay-opacity', String(overlayState.opacity));
   localStorage.setItem('noji-overlay-scale', String(overlayState.scale));
+  localStorage.setItem('noji-overlay-scale-x', String(overlayState.scaleX));
+  localStorage.setItem('noji-overlay-scale-y', String(overlayState.scaleY));
   localStorage.setItem('noji-overlay-offset-x', String(overlayState.offsetX));
   localStorage.setItem('noji-overlay-offset-y', String(overlayState.offsetY));
 }
@@ -708,6 +712,10 @@ function setupMapAugmentControls() {
   opacity.dataset.bound = 'true';
   const scale = document.querySelector('#overlay-scale');
   const scaleLabel = document.querySelector('#overlay-scale-label');
+  const scaleX = document.querySelector('#overlay-scale-x');
+  const scaleY = document.querySelector('#overlay-scale-y');
+  const scaleXLabel = document.querySelector('#overlay-scale-x-label');
+  const scaleYLabel = document.querySelector('#overlay-scale-y-label');
   const offsetX = document.querySelector('#overlay-offset-x');
   const offsetY = document.querySelector('#overlay-offset-y');
   const offsetXLabel = document.querySelector('#overlay-offset-x-label');
@@ -717,7 +725,11 @@ function setupMapAugmentControls() {
   const overlayPanel = document.querySelector('#overlay-panel');
   opacity.value = Math.round(overlayState.opacity * 100);
   scale.value = Math.round(overlayState.scale * 100);
+  scaleX.value = Math.round(overlayState.scaleX * 100);
+  scaleY.value = Math.round(overlayState.scaleY * 100);
   scaleLabel.textContent = `${Math.round(overlayState.scale * 100)}%`;
+  scaleXLabel.textContent = `${Math.round(overlayState.scaleX * 100)}%`;
+  scaleYLabel.textContent = `${Math.round(overlayState.scaleY * 100)}%`;
   offsetX.value = Math.round(overlayState.offsetX);
   offsetY.value = Math.round(overlayState.offsetY);
   offsetXLabel.textContent = `${Math.round(overlayState.offsetX)}%`;
@@ -737,6 +749,18 @@ function setupMapAugmentControls() {
   scale.addEventListener('input', () => {
     overlayState.scale = Number(scale.value) / 100;
     scaleLabel.textContent = `${Math.round(overlayState.scale * 100)}%`;
+    saveOverlayState();
+    applyOverlayState();
+  });
+  scaleX.addEventListener('input', () => {
+    overlayState.scaleX = Number(scaleX.value) / 100;
+    scaleXLabel.textContent = `${Math.round(overlayState.scaleX * 100)}%`;
+    saveOverlayState();
+    applyOverlayState();
+  });
+  scaleY.addEventListener('input', () => {
+    overlayState.scaleY = Number(scaleY.value) / 100;
+    scaleYLabel.textContent = `${Math.round(overlayState.scaleY * 100)}%`;
     saveOverlayState();
     applyOverlayState();
   });
@@ -776,6 +800,8 @@ function applyOverlayState() {
   img.src = overlayState.src || '';
   img.style.setProperty('--overlay-opacity', String(overlayState.opacity));
   img.style.setProperty('--overlay-scale', String(overlayState.scale));
+  img.style.setProperty('--overlay-scale-x', String(overlayState.scaleX));
+  img.style.setProperty('--overlay-scale-y', String(overlayState.scaleY));
   img.style.setProperty('--overlay-offset-x', `${overlayState.offsetX}%`);
   img.style.setProperty('--overlay-offset-y', `${overlayState.offsetY}%`);
 }
