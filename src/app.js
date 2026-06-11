@@ -580,14 +580,7 @@ function setupMapInteractions() {
 
   svg.addEventListener('pointermove', onTileHover);
   frame.addEventListener('pointermove', hideHoverWhenOutsideTile);
-  svg.addEventListener('pointerleave', hideHover);
-  svg.addEventListener('pointerout', event => {
-    const leftTile = event.target.closest?.('.square-tile');
-    const enteredTile = event.relatedTarget?.closest?.('.square-tile');
-    if ((leftTile && !enteredTile) || !event.relatedTarget || !svg.contains(event.relatedTarget)) hideHover();
-  });
   frame.addEventListener('pointerleave', hideHover);
-  mapDom.wrap.addEventListener('pointerleave', hideHover);
   frame.addEventListener('scroll', hideHover, { passive: true });
   window.addEventListener('blur', hideHover);
 
@@ -730,7 +723,6 @@ function onTileHover(event) {
   ty = Math.min(ty, wrapRect.height - tooltip.offsetHeight - 10);
   tooltip.style.transform = `translate(${Math.max(8, tx)}px, ${Math.max(8, ty)}px)`;
 }
-
 
 function hideHoverWhenOutsideTile(event) {
   const element = document.elementFromPoint(event.clientX, event.clientY);
