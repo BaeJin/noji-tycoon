@@ -701,6 +701,64 @@ body:not(.editor-mode) .editor-settings { display: none; }
   pointer-events: none;
 }
 
+/* placed objects */
+.map-object { pointer-events: none; }
+.map-object-rect {
+  fill-opacity: .82;
+  stroke: rgba(255, 255, 255, .85);
+  stroke-width: 1.2;
+  vector-effect: non-scaling-stroke;
+}
+.map-object-icon {
+  text-anchor: middle;
+  dominant-baseline: central;
+  pointer-events: none;
+  filter: drop-shadow(0 1px 2px rgba(0,0,0,.6));
+}
+.map-object-arrow { fill: rgba(255, 255, 255, .9); }
+.object-ghost {
+  pointer-events: none;
+  stroke-width: 1.6;
+  stroke-dasharray: 4 3;
+  vector-effect: non-scaling-stroke;
+}
+.object-ghost.valid { fill: rgba(126, 224, 129, .3); stroke: #7ee081; }
+.object-ghost.invalid { fill: rgba(230, 109, 92, .35); stroke: #e66d5c; }
+.object-ghost.pickup { fill: rgba(240, 193, 90, .25); stroke: var(--gold); stroke-dasharray: none; }
+.ghost-icon { opacity: .75; }
+
+/* object palette (place tool) */
+.object-palette { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
+.object-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: 7px 2px 6px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(0,0,0,.24);
+  cursor: pointer;
+  transition: border-color .1s ease, transform .1s ease;
+}
+.object-card span { font-size: 17px; line-height: 1.1; }
+.object-card small { font-size: 10px; color: var(--text); }
+.object-card i { font-style: normal; font-size: 9px; color: var(--muted); }
+.object-card:hover { transform: translateY(-1px); border-color: rgba(255,255,255,.4); }
+.object-card.active { border-color: var(--gold); background: color-mix(in srgb, var(--gold) 14%, rgba(0,0,0,.3)); box-shadow: 0 0 10px color-mix(in srgb, var(--gold) 35%, transparent); }
+.rotate-row { display: flex; gap: 8px; align-items: center; }
+.rotate-row button {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(0,0,0,.24);
+  color: var(--text);
+  padding: 6px 11px;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.rotate-row button:hover { border-color: var(--gold); }
+.rotate-row span { color: var(--muted); font-size: 11.5px; }
+
 /* terrain tool context */
 .terrain-modes button { font-size: 13px; }
 .level-stepper {

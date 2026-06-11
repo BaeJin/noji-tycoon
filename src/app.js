@@ -55,6 +55,14 @@ const statusTone = {
   locked: 'muted', needs_survey: 'warn', blocked: 'bad', invited_later: 'muted'
 };
 
+const objectTypes = {
+  tent: { label: '텐트', icon: '⛺', w: 10, h: 5, tint: '#3e8f66' },
+  vehicle: { label: '차량', icon: '🚙', w: 5, h: 2, tint: '#7890a8' },
+  toilet: { label: '간이화장실', icon: '🚻', w: 2, h: 2, tint: '#9b8456' },
+  firepit: { label: '화로대', icon: '🔥', w: 1, h: 1, tint: '#d65345' }
+};
+const OBJECT_ROTATIONS = [0, 90, 180, 270];
+
 let projectData;
 let currentTheme = localStorage.getItem('noji-theme') || 'forest';
 let editorEnabled = false;
@@ -64,6 +72,11 @@ let brushSize = 1;
 let terrainMode = 'raise';
 let terrainLevel = 2;
 let contoursVisible = localStorage.getItem('noji-contours') !== 'false';
+let placedObjects = [];
+let placeType = 'tent';
+let placeRotation = 0;
+let lastHoverTile = null;
+let objectIdSeq = 1;
 let measurePoints = [];
 let mapZoom = Number.parseFloat(localStorage.getItem('noji-map-zoom') || '0');
 const DEFAULT_OVERLAY_SRC = '/overlays/hachunri-179-2-available-land.png';
@@ -98,6 +111,47 @@ function tileKey(q, r) { return `${q},${r}`; }
 function tileH(tile) { return tile.h || 0; }
 function clampTerrain(value) {
   return Math.max(TERRAIN_MIN, Math.min(TERRAIN_MAX, Math.round(Number(value) || 0)));
+}
+
+/* ---------- placed objects: geometry helpers ---------- */
+
+function makeObjectId() {
+  return `obj_${Date.now().toString(36)}_${objectIdSeq++}`;
+}
+
+function footprintOf(type, rot) {
+  const meta = objectTypes[type] || objectTypes.firepit;
+  return rot % 180 === 0 ? { w: meta.w, h: meta.h } : { w: meta.h, h: meta.w };
+}
+
+function objectFitsBounds(obj) {
+  const { w, h } = footprintOf(obj.type, obj.rot);
+  return obj.q >= 0 && obj.r >= 0 && obj.q + w <= mapSettings.width && obj.r + h <= mapSettings.height;
+}
+
+function objectsOverlap(a, b) {
+  const fa = footprintOf(a.type, a.rot);
+  const fb = footprintOf(b.type, b.rot);
+  return a.q < b.q + fb.w && b.q < a.q + fa.w && a.r < b.r + fb.h && b.r < a.r + fa.h;
+}
+
+function objectAt(q, r) {
+  return placedObjects.find(obj => {
+    const { w, h } = footprintOf(obj.type, obj.rot);
+    return q >= obj.q && q < obj.q + w && r >= obj.r && r < obj.r + h;
+  }) || null;
+}
+
+function canPlaceObject(candidate, ignoreId = null) {
+  if (!objectFitsBounds(candidate)) return false;
+  return !placedObjects.some(obj => obj.id !== ignoreId && objectsOverlap(candidate, obj));
+}
+
+function placeAnchorFor(tile, type, rot) {
+  const { w, h } = footprintOf(type, rot);
+  const q = Math.max(0, Math.min(mapSettings.width - w, tile.q - Math.floor((w - 1) / 2)));
+  const r = Math.max(0, Math.min(mapSettings.height - h, tile.r - Math.floor((h - 1) / 2)));
+  return { q, r };
 }
 
 async function loadProject() {
@@ -275,6 +329,8 @@ function buildMapDom() {
     <g id="tile-layer"></g>
     <g id="contour-layer"></g>
     <g id="line-layer"></g>
+    <g id="object-layer"></g>
+    <g id="ghost-layer"></g>
     <g id="measure-layer"></g>
     <rect id="hover-rect" class="hover-rect" visibility="hidden" />
     <rect id="select-rect" class="select-rect" visibility="hidden" />
@@ -309,10 +365,66 @@ function buildMapDom() {
   selectedTileKey = null;
   applyFocusZone();
   updateBoundaries();
+  renderObjectsLayer();
   updateMeasureLayer();
   updateLegend();
   applyZoom();
   renderInlineEditorStats();
+}
+
+/* ---------- placed objects: rendering ---------- */
+
+function renderObjectsLayer() {
+  const layer = mapDom.svg.querySelector('#object-layer');
+  if (!layer) return;
+  layer.innerHTML = '';
+  for (const obj of placedObjects) {
+    const meta = objectTypes[obj.type];
+    if (!meta) continue;
+    const { w, h } = footprintOf(obj.type, obj.rot);
+    const { x, y } = tileRectPx(obj.q, obj.r);
+    const pw = w * SQUARE_SIZE_PX;
+    const ph = h * SQUARE_SIZE_PX;
+    const cx = x + pw / 2;
+    const cy = y + ph / 2;
+    const iconSize = Math.min(pw, ph) * 0.74;
+    const arrowSpan = Math.min(pw, ph) * 0.22;
+    const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    g.setAttribute('class', 'map-object');
+    g.dataset.objectId = obj.id;
+    g.innerHTML = `
+      <rect class="map-object-rect" x="${x}" y="${y}" width="${pw}" height="${ph}" rx="${SQUARE_SIZE_PX * 0.3}" style="fill:${meta.tint}" />
+      <polygon class="map-object-arrow" points="${cx - arrowSpan},${y + ph * 0.16 + arrowSpan} ${cx + arrowSpan},${y + ph * 0.16 + arrowSpan} ${cx},${y + ph * 0.16}"
+        transform="rotate(${obj.rot} ${cx} ${cy})" />
+      <text class="map-object-icon" x="${cx}" y="${cy}" font-size="${iconSize}">${meta.icon}</text>
+    `;
+    layer.appendChild(g);
+  }
+}
+
+function updateGhost(tile) {
+  const layer = mapDom.svg?.querySelector('#ghost-layer');
+  if (!layer) return;
+  if (!tile || !editorEnabled || editorTool !== 'place') {
+    layer.innerHTML = '';
+    return;
+  }
+  const anchor = placeAnchorFor(tile, placeType, placeRotation);
+  const candidate = { type: placeType, q: anchor.q, r: anchor.r, rot: placeRotation };
+  const hit = objectAt(tile.q, tile.r);
+  const valid = !hit && canPlaceObject(candidate);
+  const { w, h } = footprintOf(placeType, placeRotation);
+  const { x, y } = tileRectPx(anchor.q, anchor.r);
+  const pw = w * SQUARE_SIZE_PX;
+  const ph = h * SQUARE_SIZE_PX;
+  const meta = objectTypes[placeType];
+  layer.innerHTML = hit ? `
+    <rect class="object-ghost pickup" x="${tileRectPx(hit.q, hit.r).x}" y="${tileRectPx(hit.q, hit.r).y}"
+      width="${footprintOf(hit.type, hit.rot).w * SQUARE_SIZE_PX}" height="${footprintOf(hit.type, hit.rot).h * SQUARE_SIZE_PX}" rx="${SQUARE_SIZE_PX * 0.3}" />
+  ` : `
+    <rect class="object-ghost ${valid ? 'valid' : 'invalid'}" x="${x}" y="${y}" width="${pw}" height="${ph}" rx="${SQUARE_SIZE_PX * 0.3}" />
+    <text class="map-object-icon ghost-icon" x="${x + pw / 2}" y="${y + ph / 2}" font-size="${Math.min(pw, ph) * 0.74}">${meta.icon}</text>
+  `;
 }
 
 function repaintTiles() {
@@ -559,11 +671,22 @@ function onTileHover(event) {
 
   const tile = tileState.get(tileKey(Number(rectEl.dataset.q), Number(rectEl.dataset.r)));
   if (!tile) return;
+  lastHoverTile = tile;
+  updateGhost(tile);
+  const objectHere = objectAt(tile.q, tile.r);
   const meta = getZoneMeta()[tile.zone] || getZoneMeta().wild;
   const tooltip = mapDom.tooltip;
   tooltip.hidden = false;
   let hint = '';
-  if (editorEnabled && (editorTool === 'paint' || editorTool === 'erase')) {
+  if (editorEnabled && editorTool === 'place') {
+    const placeMeta = objectTypes[placeType];
+    const { w, h } = footprintOf(placeType, placeRotation);
+    hint = objectHere
+      ? `<em>📦 ${objectTypes[objectHere.type]?.icon || ''} ${objectTypes[objectHere.type]?.label || ''} — 클릭해서 집어 옮기기</em>`
+      : `<em>📦 ${placeMeta.icon} ${placeMeta.label} ${w}×${h}m · R 회전</em>`;
+  } else if (editorEnabled && editorTool === 'erase' && objectHere) {
+    hint = `<em>🧽 ${objectTypes[objectHere.type]?.icon || ''} ${objectTypes[objectHere.type]?.label || ''} 제거</em>`;
+  } else if (editorEnabled && (editorTool === 'paint' || editorTool === 'erase')) {
     const zoneIcon = getZoneMeta()[paintZone]?.icon || '';
     hint = `<em>${editorTool === 'paint' ? `🖌 ${zoneIcon} ${paintZone}` : '🧽 → wild'} · ${brushSize}m</em>`;
   } else if (editorEnabled && editorTool === 'terrain') {
@@ -574,7 +697,9 @@ function onTileHover(event) {
   } else {
     hint = `<em class="desc">${zoneDescription(tile.zone) || ''}</em>`;
   }
-  tooltip.innerHTML = `<b>${meta.icon} ${meta.label}</b><span>(${tile.q}, ${tile.r}) · 고도 ${tileH(tile)}m</span>${hint}`;
+  const objectLine = objectHere && !(editorEnabled && ['place', 'erase'].includes(editorTool))
+    ? `<span>📦 ${objectTypes[objectHere.type]?.icon || ''} ${objectTypes[objectHere.type]?.label || ''}</span>` : '';
+  tooltip.innerHTML = `<b>${meta.icon} ${meta.label}</b><span>(${tile.q}, ${tile.r}) · 고도 ${tileH(tile)}m</span>${objectLine}${hint}`;
 
   const wrapRect = mapDom.wrap.getBoundingClientRect();
   let tx = event.clientX - wrapRect.left + 16;
@@ -589,11 +714,24 @@ function hideHover() {
   if (hover) hover.setAttribute('visibility', 'hidden');
   const tooltip = mapDom.tooltip;
   if (tooltip) tooltip.hidden = true;
+  lastHoverTile = null;
+  updateGhost(null);
 }
 
 /* ---------- selection / tile click ---------- */
 
 function handleTileClick(tile, rectEl) {
+  if (editorEnabled && editorTool === 'place') {
+    handlePlaceClick(tile);
+    return;
+  }
+  if (editorEnabled && editorTool === 'erase') {
+    const hit = objectAt(tile.q, tile.r);
+    if (hit) {
+      removeObject(hit.id);
+      return;
+    }
+  }
   if (editorEnabled && ['paint', 'erase'].includes(editorTool)) {
     applyBrush(tile);
     return;
@@ -658,6 +796,46 @@ function applyBrush(center) {
   updateBoundaries();
   updateLegend();
   renderInlineEditorStats();
+}
+
+/* ---------- placed objects: editing ---------- */
+
+function handlePlaceClick(tile) {
+  const hit = objectAt(tile.q, tile.r);
+  if (hit) {
+    placedObjects = placedObjects.filter(obj => obj.id !== hit.id);
+    placeType = hit.type;
+    placeRotation = hit.rot;
+    renderObjectsLayer();
+    renderEditorContext();
+    saveMapToStorage();
+    renderInlineEditorStats(`${objectTypes[hit.type]?.label || ''} 집음 — 클릭해서 다시 설치`);
+    updateGhost(tile);
+    return;
+  }
+  const anchor = placeAnchorFor(tile, placeType, placeRotation);
+  const candidate = { id: makeObjectId(), type: placeType, q: anchor.q, r: anchor.r, rot: placeRotation };
+  if (!canPlaceObject(candidate)) return;
+  placedObjects.push(candidate);
+  renderObjectsLayer();
+  saveMapToStorage();
+  renderInlineEditorStats();
+  updateGhost(tile);
+}
+
+function removeObject(id) {
+  const obj = placedObjects.find(o => o.id === id);
+  placedObjects = placedObjects.filter(o => o.id !== id);
+  renderObjectsLayer();
+  saveMapToStorage();
+  renderInlineEditorStats(obj ? `${objectTypes[obj.type]?.label || ''} 제거됨` : '');
+  if (lastHoverTile) updateGhost(lastHoverTile);
+}
+
+function rotatePlaceObject() {
+  placeRotation = OBJECT_ROTATIONS[(OBJECT_ROTATIONS.indexOf(placeRotation) + 1) % OBJECT_ROTATIONS.length];
+  renderEditorContext();
+  if (lastHoverTile) updateGhost(lastHoverTile);
 }
 
 function applyTerrainBrush(center) {
@@ -761,11 +939,13 @@ function renderInlineEditorStats(extra = '') {
     if (h > hMax) hMax = h;
   });
   const terrainText = hMin !== hMax || hMin !== 0 ? `<span>⛰ 고도 ${hMin}m ~ ${hMax}m · 등고선 ${CONTOUR_MAJOR_STEP}m 굵게</span>` : '';
+  const objectText = placedObjects.length ? `<span>📦 오브젝트 ${placedObjects.length}개</span>` : '';
   el.innerHTML = `
     <span>맵 ${mapSettings.width}m×${mapSettings.height}m = ${totalSqm.toFixed(0)}㎡ / ${totalPyeong.toFixed(1)}평</span>
     <span>실토지 약 ${TARGET_LAND_PYEONG}평(${TARGET_LAND_SQM.toFixed(0)}㎡) 기준 ${landFitText}</span>
     <span>tile 1m×1m${measureText}</span>
     ${terrainText}
+    ${objectText}
     <span>${Object.entries(counts).map(([zone, count]) => `${zoneMeta[zone]?.icon || ''} ${zone}: ${count}`).join(' · ')}</span>
     ${extra ? `<span class="good">${extra}</span>` : ''}
   `;
@@ -985,6 +1165,7 @@ function setEditorEnabled(next) {
   editorEnabled = next;
   measurePoints = [];
   updateMeasureLayer();
+  updateGhost(null);
   document.body.classList.toggle('editor-mode', editorEnabled);
   const toggle = document.querySelector('#toggle-map-editor');
   toggle.textContent = editorEnabled ? '✕ Close Editor' : '🛠 Map Editor';
@@ -998,6 +1179,7 @@ function setEditorTool(tool) {
   editorTool = tool;
   measurePoints = [];
   updateMeasureLayer();
+  updateGhost(lastHoverTile);
   document.querySelectorAll('[data-editor-tool]').forEach(b => b.classList.toggle('active', b.dataset.editorTool === editorTool));
   clearSelection();
   renderEditorContext();
@@ -1007,9 +1189,34 @@ function setEditorTool(tool) {
 function renderEditorContext() {
   const panel = mapDom.editorContext;
   if (!panel) return;
-  if (!editorEnabled || !['paint', 'erase', 'terrain'].includes(editorTool)) {
+  if (!editorEnabled || !['paint', 'erase', 'terrain', 'place'].includes(editorTool)) {
     panel.hidden = true;
     panel.innerHTML = '';
+    return;
+  }
+  if (editorTool === 'place') {
+    const { w, h } = footprintOf(placeType, placeRotation);
+    panel.innerHTML = `
+      <div class="context-section">
+        <h4>오브젝트</h4>
+        <div class="object-palette">
+          ${Object.entries(objectTypes).map(([key, meta]) => `
+            <button class="object-card ${placeType === key ? 'active' : ''}" data-place-type="${key}" title="${meta.label} ${meta.w}×${meta.h}m">
+              <span>${meta.icon}</span><small>${meta.label}</small><i>${meta.w}×${meta.h}m</i>
+            </button>
+          `).join('')}
+        </div>
+      </div>
+      <div class="context-section">
+        <h4>방향</h4>
+        <div class="rotate-row">
+          <button data-rotate title="90° 회전 (R)">↻ 회전</button>
+          <span>${placeRotation}° · ${w}×${h}m</span>
+        </div>
+        <p class="zone-name">기존 오브젝트 클릭 = 집어서 이동</p>
+      </div>
+    `;
+    panel.hidden = false;
     return;
   }
   const zoneMeta = getZoneMeta();
@@ -1090,6 +1297,17 @@ function setupInlineEditor() {
       renderEditorContext();
       return;
     }
+    const placeCard = event.target.closest('[data-place-type]');
+    if (placeCard) {
+      placeType = placeCard.dataset.placeType;
+      renderEditorContext();
+      if (lastHoverTile) updateGhost(lastHoverTile);
+      return;
+    }
+    if (event.target.closest('[data-rotate]')) {
+      rotatePlaceObject();
+      return;
+    }
     const mode = event.target.closest('[data-terrain-mode]');
     if (mode) {
       terrainMode = mode.dataset.terrainMode;
@@ -1134,7 +1352,11 @@ function setupInlineEditor() {
     }
     if (!editorEnabled) return;
     const key = event.key.toLowerCase();
-    const toolByKey = { v: 'inspect', b: 'paint', e: 'erase', m: 'measure', t: 'terrain' };
+    if (key === 'r' && editorTool === 'place') {
+      rotatePlaceObject();
+      return;
+    }
+    const toolByKey = { v: 'inspect', b: 'paint', e: 'erase', m: 'measure', t: 'terrain', o: 'place' };
     if (toolByKey[key]) {
       closeEditorSettings();
       setEditorTool(toolByKey[key]);
@@ -1155,7 +1377,8 @@ function buildMapPayload() {
       heightSystem: `integer per-tile elevation h in meters (relative), range ${TERRAIN_MIN}..${TERRAIN_MAX}; contour lines drawn between tiles of different h, major line every ${CONTOUR_MAJOR_STEP}m`
     },
     grid: { width: mapSettings.width, height: mapSettings.height },
-    tiles: [...tileState.values()]
+    tiles: [...tileState.values()],
+    objects: placedObjects.map(obj => ({ ...obj }))
   };
 }
 
@@ -1197,6 +1420,16 @@ function applyMapPayload(payload) {
     if (baseZones[tile.zone]) target.zone = tile.zone;
     if (Number.isFinite(tile.h)) target.h = clampTerrain(tile.h);
   }
+  placedObjects = (Array.isArray(payload.objects) ? payload.objects : [])
+    .filter(obj => objectTypes[obj.type] && Number.isInteger(obj.q) && Number.isInteger(obj.r))
+    .map(obj => ({
+      id: obj.id || makeObjectId(),
+      type: obj.type,
+      q: obj.q,
+      r: obj.r,
+      rot: OBJECT_ROTATIONS.includes(obj.rot) ? obj.rot : 0
+    }))
+    .filter(obj => objectFitsBounds(obj));
   syncMapSizeInputs();
   return true;
 }
@@ -1204,7 +1437,9 @@ function applyMapPayload(payload) {
 function applyMapSizeFromInputs() {
   const width = document.querySelector('#map-width-input').value;
   const height = document.querySelector('#map-height-input').value;
-  resizeMap(width, height, { preserve: true, save: true });
+  resizeMap(width, height, { preserve: true, save: false });
+  placedObjects = placedObjects.filter(obj => objectFitsBounds(obj));
+  saveMapToStorage();
   measurePoints = [];
   buildMapDom();
   renderInlineEditorStats('map resized');
