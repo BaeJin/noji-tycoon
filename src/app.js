@@ -59,7 +59,6 @@ let paintZone = 'wild';
 let brushSize = 1;
 let measurePoints = [];
 let mapZoom = Number.parseFloat(localStorage.getItem('noji-map-zoom') || '0');
-let augmentEnabled = localStorage.getItem('noji-map-augment') === 'true';
 const DEFAULT_OVERLAY_SRC = '/overlays/hachunri-179-2-available-land.png';
 let overlayState = loadOverlayState();
 let mapSettings = { width: DEFAULT_MAP_WIDTH, height: DEFAULT_MAP_HEIGHT };
@@ -731,10 +730,9 @@ function saveOverlayState() {
 }
 
 function setupMapAugmentControls() {
-  const toggle = document.querySelector('#map-augment-toggle');
-  if (!toggle || toggle.dataset.bound) return;
-  toggle.dataset.bound = 'true';
   const opacity = document.querySelector('#overlay-opacity');
+  if (!opacity || opacity.dataset.bound) return;
+  opacity.dataset.bound = 'true';
   const scale = document.querySelector('#overlay-scale');
   const scaleLabel = document.querySelector('#overlay-scale-label');
   const offsetX = document.querySelector('#overlay-offset-x');
@@ -744,7 +742,6 @@ function setupMapAugmentControls() {
   const editorOpacity = document.querySelector('#overlay-opacity-editor');
   const opacityLabel = document.querySelector('#overlay-opacity-label');
   const fileInput = document.querySelector('#overlay-image-file');
-  toggle.checked = augmentEnabled;
   opacity.value = Math.round(overlayState.opacity * 100);
   scale.value = Math.round(overlayState.scale * 100);
   scaleLabel.textContent = `${Math.round(overlayState.scale * 100)}%`;
@@ -755,11 +752,6 @@ function setupMapAugmentControls() {
   editorOpacity.value = Math.round(overlayState.opacity * 100);
   opacityLabel.textContent = `${Math.round(overlayState.opacity * 100)}%`;
   applyOverlayState();
-  toggle.addEventListener('change', () => {
-    augmentEnabled = toggle.checked;
-    localStorage.setItem('noji-map-augment', String(augmentEnabled));
-    applyOverlayState();
-  });
   function setOverlayOpacity(percent) {
     overlayState.opacity = Number(percent) / 100;
     opacity.value = Math.round(overlayState.opacity * 100);
@@ -797,9 +789,6 @@ function setupMapAugmentControls() {
   });
   document.querySelector('#delete-overlay-image').addEventListener('click', () => {
     overlayState.src = '';
-    augmentEnabled = false;
-    toggle.checked = false;
-    localStorage.setItem('noji-map-augment', 'false');
     saveOverlayState();
     applyOverlayState();
   });
@@ -811,10 +800,7 @@ async function importOverlayImage(event) {
   const reader = new FileReader();
   reader.onload = () => {
     overlayState.src = String(reader.result);
-    augmentEnabled = true;
-    localStorage.setItem('noji-map-augment', 'true');
     saveOverlayState();
-    document.querySelector('#map-augment-toggle').checked = true;
     applyOverlayState();
   };
   reader.readAsDataURL(file);
@@ -824,7 +810,7 @@ async function importOverlayImage(event) {
 function applyOverlayState() {
   const img = document.querySelector('#parcel-overlay');
   if (!img) return;
-  document.body.classList.toggle('map-augment-on', augmentEnabled && Boolean(overlayState.src));
+  document.body.classList.toggle('map-augment-on', Boolean(overlayState.src));
   img.src = overlayState.src || '';
   img.style.setProperty('--overlay-opacity', String(overlayState.opacity));
   img.style.setProperty('--overlay-scale', String(overlayState.scale));
