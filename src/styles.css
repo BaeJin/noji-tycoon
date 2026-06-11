@@ -518,6 +518,7 @@ body.contours-off #contour-layer { display: none; }
   white-space: nowrap;
   font-size: 12px;
 }
+.tile-tooltip[hidden] { display: none !important; }
 .tile-tooltip b { color: var(--text); font-weight: 700; }
 .tile-tooltip span { color: var(--muted); font-size: 11px; }
 .tile-tooltip em { color: var(--gold); font-style: normal; font-size: 11px; }
