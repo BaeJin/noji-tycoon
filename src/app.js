@@ -682,8 +682,12 @@ function onTileHover(event) {
   lastHoverTile = tile;
   updateGhost(tile);
   const objectHere = objectAt(tile.q, tile.r);
-  const meta = getZoneMeta()[tile.zone] || getZoneMeta().wild;
   const tooltip = mapDom.tooltip;
+  if (editorEnabled && editorTool === 'paint') {
+    tooltip.hidden = true;
+    return;
+  }
+  const meta = getZoneMeta()[tile.zone] || getZoneMeta().wild;
   tooltip.hidden = false;
   let hint = '';
   if (editorEnabled && editorTool === 'place') {
@@ -692,11 +696,6 @@ function onTileHover(event) {
     hint = objectHere
       ? `<em>📦 ${objectTypes[objectHere.type]?.icon || ''} ${objectTypes[objectHere.type]?.label || ''} — 클릭해서 집어 옮기기</em>`
       : `<em>📦 ${placeMeta.icon} ${placeMeta.label} ${w}×${h}m · R 회전</em>`;
-  } else if (editorEnabled && editorTool === 'erase' && objectHere) {
-    hint = `<em>🧽 ${objectTypes[objectHere.type]?.icon || ''} ${objectTypes[objectHere.type]?.label || ''} 제거</em>`;
-  } else if (editorEnabled && (editorTool === 'paint' || editorTool === 'erase')) {
-    const zoneIcon = getZoneMeta()[paintZone]?.icon || '';
-    hint = `<em>${editorTool === 'paint' ? `🖌 ${zoneIcon} ${paintZone}` : '🧽 → wild'} · ${brushSize}m</em>`;
   } else if (editorEnabled && editorTool === 'terrain') {
     const modeText = terrainMode === 'raise' ? '▲ +1m' : terrainMode === 'lower' ? '▼ −1m' : `▦ ${terrainLevel}m 평탄화`;
     hint = `<em>⛰ ${modeText} · ${brushSize}m</em>`;
@@ -705,7 +704,7 @@ function onTileHover(event) {
   } else {
     hint = `<em class="desc">${zoneDescription(tile.zone) || ''}</em>`;
   }
-  const objectLine = objectHere && !(editorEnabled && ['place', 'erase'].includes(editorTool))
+  const objectLine = objectHere && !(editorEnabled && editorTool === 'place')
     ? `<span>📦 ${objectTypes[objectHere.type]?.icon || ''} ${objectTypes[objectHere.type]?.label || ''}</span>` : '';
   tooltip.innerHTML = `<b>${meta.icon} ${meta.label}</b><span>(${tile.q}, ${tile.r}) · 고도 ${tileH(tile)}m</span>${objectLine}${hint}`;
 
@@ -739,14 +738,7 @@ function handleTileClick(tile, rectEl) {
     handlePlaceClick(tile);
     return;
   }
-  if (editorEnabled && editorTool === 'erase') {
-    const hit = objectAt(tile.q, tile.r);
-    if (hit) {
-      removeObject(hit.id);
-      return;
-    }
-  }
-  if (editorEnabled && ['paint', 'erase'].includes(editorTool)) {
+  if (editorEnabled && editorTool === 'paint') {
     applyBrush(tile);
     return;
   }
@@ -796,7 +788,7 @@ function brushBounds(center, size = brushSize) {
 function updateBrushHover(center) {
   const hover = mapDom.svg?.querySelector('#hover-rect');
   if (!hover) return;
-  const showBrush = editorEnabled && ['paint', 'erase', 'terrain'].includes(editorTool);
+  const showBrush = editorEnabled && ['paint', 'terrain'].includes(editorTool);
   const bounds = showBrush ? brushBounds(center) : { q0: center.q, r0: center.r, w: 1, h: 1 };
   const { x, y, size } = tileRectPx(bounds.q0, bounds.r0);
   hover.setAttribute('x', x);
@@ -819,7 +811,7 @@ function getBrushTiles(center) {
 }
 
 function applyBrush(center) {
-  const nextZone = editorTool === 'erase' ? 'wild' : paintZone;
+  const nextZone = paintZone;
   for (const tile of getBrushTiles(center)) {
     if (tile.zone === nextZone) continue;
     tile.zone = nextZone;
@@ -858,15 +850,6 @@ function handlePlaceClick(tile) {
   saveMapToStorage();
   renderInlineEditorStats();
   updateGhost(tile);
-}
-
-function removeObject(id) {
-  const obj = placedObjects.find(o => o.id === id);
-  placedObjects = placedObjects.filter(o => o.id !== id);
-  renderObjectsLayer();
-  saveMapToStorage();
-  renderInlineEditorStats(obj ? `${objectTypes[obj.type]?.label || ''} 제거됨` : '');
-  if (lastHoverTile) updateGhost(lastHoverTile);
 }
 
 function rotatePlaceObject() {
@@ -1226,7 +1209,7 @@ function setEditorTool(tool) {
 function renderEditorContext() {
   const panel = mapDom.editorContext;
   if (!panel) return;
-  if (!editorEnabled || !['paint', 'erase', 'terrain', 'place'].includes(editorTool)) {
+  if (!editorEnabled || !['paint', 'terrain', 'place'].includes(editorTool)) {
     panel.hidden = true;
     panel.innerHTML = '';
     return;
@@ -1394,7 +1377,7 @@ function setupInlineEditor() {
       rotatePlaceObject();
       return;
     }
-    const toolByKey = { v: 'inspect', b: 'paint', e: 'erase', m: 'measure', t: 'terrain', o: 'place' };
+    const toolByKey = { v: 'inspect', b: 'paint', m: 'measure', t: 'terrain', o: 'place' };
     if (toolByKey[key]) {
       closeEditorSettings();
       setEditorTool(toolByKey[key]);
