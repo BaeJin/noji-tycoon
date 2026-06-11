@@ -51,14 +51,14 @@
         <div class="map-toolbar">
           <div>
             <strong>Hachunri 179-2</strong>
-            <span>1 hex ≈ 1평 · Honeycomb SVG grid</span>
+            <span>1칸 = 1m×1m · Square SVG grid</span>
           </div>
           <div class="map-buttons"><button id="toggle-map-editor" class="primary-map-button">Map Editor</button><button id="map-zoom-out">−</button><button id="map-zoom-reset">100%</button><button id="map-zoom-in">+</button><button id="reset-selection">Reset View</button><label class="augment-toggle"><input id="map-augment-toggle" type="checkbox" /> 지도 증강 <small>80m×80m</small></label><label class="opacity-control">투명도 <input id="overlay-opacity" type="range" min="0" max="100" value="48" /></label></div>
         </div>
         <div id="inline-editor-panel" class="inline-editor-panel" aria-hidden="true">
           <div class="editor-mode-row">
             <strong>In-game Map Editor</strong>
-            <span>1 hex = 1평 · 같은 맵 상태에서 편집</span>
+            <span>1칸 = 1m×1m · 같은 맵 상태에서 편집</span>
           </div>
           <div class="inline-editor-controls">
             <button data-editor-tool="inspect" class="active">Inspect</button>
@@ -79,16 +79,16 @@
             </label>
             <label>Brush
               <select id="brush-size-select">
-                <option value="1">1 hex</option>
-                <option value="3">3 hex</option>
-                <option value="5">5 hex</option>
+                <option value="1">1m</option>
+                <option value="3">3m × 3m</option>
+                <option value="5">5m × 5m</option>
               </select>
             </label>
             <button id="save-inline-map">Save Local</button><button id="load-inline-map">Load JSON</button><button id="export-inline-map">Export JSON</button><input id="inline-map-file" type="file" accept="application/json,.json" hidden />
           </div>
           <div class="map-settings">
-            <label>Width <input id="map-width-input" type="number" min="8" max="80" step="1" /></label>
-            <label>Height <input id="map-height-input" type="number" min="8" max="80" step="1" /></label>
+            <label>Width <input id="map-width-input" type="number" min="8" max="120" step="1" /></label>
+            <label>Height <input id="map-height-input" type="number" min="8" max="120" step="1" /></label>
             <button id="apply-map-size">Apply Size</button>
             <button id="fit-map-view">Fit View</button>
           </div>
@@ -113,7 +113,7 @@
         <div id="zone-legend" class="legend legend-top"></div>
         <div class="map-frame">
           <div id="map-canvas-layer" class="map-canvas-layer">
-            <svg id="hex-svg" role="img" aria-label="Noji hex land map"></svg>
+            <svg id="hex-svg" role="img" aria-label="Noji square land map"></svg>
             <img id="parcel-overlay" class="parcel-overlay" src="/overlays/hachunri-179-2-available-land.png" alt="하천리 179-2 가용 토지 참고 이미지" />
           </div>
         </div>

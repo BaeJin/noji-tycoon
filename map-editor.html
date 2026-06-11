@@ -13,8 +13,8 @@
     <header class="editor-topbar">
       <div>
         <p class="label">PROJECT NOJI · MAP EDITOR</p>
-        <h1>Hachunri Hex Survey</h1>
-        <p class="editor-subtitle">1 hex = 1평 = 3.305785㎡. 실제 거리/면적 기준으로 하천리 179-2를 모델링하는 편집기.</p>
+        <h1>Hachunri Square Survey</h1>
+        <p class="editor-subtitle">1칸 = 1m×1m = 1㎡. 실제 거리/면적 기준으로 하천리 179-2를 모델링하는 편집기.</p>
       </div>
       <a class="back-link" href="/">← Tycoon Dashboard</a>
     </header>
@@ -24,10 +24,10 @@
         <section class="panel">
           <div class="panel-title"><h3>Scale</h3><span>fixed real-world unit</span></div>
           <dl class="scale-facts">
-            <div><dt>Hex area</dt><dd id="fact-area">-</dd></div>
-            <div><dt>Side length</dt><dd id="fact-side">-</dd></div>
-            <div><dt>Point-to-point</dt><dd id="fact-width">-</dd></div>
-            <div><dt>Flat-to-flat</dt><dd id="fact-height">-</dd></div>
+            <div><dt>Tile area</dt><dd id="fact-area">-</dd></div>
+            <div><dt>Tile width</dt><dd id="fact-side">-</dd></div>
+            <div><dt>Tile height</dt><dd id="fact-width">-</dd></div>
+            <div><dt>Pyeong per tile</dt><dd id="fact-height">-</dd></div>
           </dl>
         </section>
 
@@ -66,7 +66,7 @@
       <section class="editor-stage">
         <div class="editor-toolbar">
           <div>
-            <strong>Hex parcel canvas</strong>
+            <strong>Square parcel canvas</strong>
             <span>드래그로 이동 · 휠로 확대/축소 · 클릭으로 편집/측정</span>
           </div>
           <div class="zoom-controls">
@@ -76,8 +76,8 @@
           </div>
         </div>
         <div id="editor-canvas-wrap" class="editor-canvas-wrap">
-          <svg id="editor-svg" aria-label="1 pyeong hex map editor"></svg>
-          <div id="measure-readout" class="measure-readout">측정 모드에서 두 hex를 선택하면 거리가 표시됨.</div>
+          <svg id="editor-svg" aria-label="1 meter square map editor"></svg>
+          <div id="measure-readout" class="measure-readout">측정 모드에서 두 타일을 선택하면 거리가 표시됨.</div>
         </div>
       </section>
     </main>

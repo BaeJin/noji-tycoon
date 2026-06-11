@@ -12,10 +12,14 @@
   },
   "dependencies": {
     "@vitejs/plugin-basic-ssl": "latest",
-    "honeycomb-grid": "latest",
     "vite": "latest"
   },
-  "devDependencies": {},
-  "keywords": ["noji", "land", "dashboard", "tech-tree", "hex-grid"],
+  "keywords": [
+    "noji",
+    "land",
+    "dashboard",
+    "tech-tree",
+    "square-grid"
+  ],
   "license": "UNLICENSED"
 }

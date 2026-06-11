@@ -1,14 +1,13 @@
 import './styles.css';
-import { defineHex, Grid, rectangle, hexToPoint, Orientation } from 'honeycomb-grid';
 
 const PYEONG_SQM = 3.305785;
-const HEX_SIDE_M = Math.sqrt((2 * PYEONG_SQM) / (3 * Math.sqrt(3)));
-const HEX_WIDTH_M = 2 * HEX_SIDE_M;
-const HEX_HEIGHT_M = Math.sqrt(3) * HEX_SIDE_M;
-const DEFAULT_MAP_WIDTH = 24;
-const DEFAULT_MAP_HEIGHT = 23;
+const SQM_PER_TILE = 1;
+const PYEONG_PER_TILE = SQM_PER_TILE / PYEONG_SQM;
+const DEFAULT_MAP_WIDTH = 80;
+const DEFAULT_MAP_HEIGHT = 80;
 const TARGET_LAND_PYEONG = 550;
-const HEX_SIZE_PX = 18;
+const TARGET_LAND_SQM = TARGET_LAND_PYEONG * PYEONG_SQM;
+const SQUARE_SIZE_PX = 10;
 
 const baseZones = {
   wild: { label: 'Wild Forest', icon: '🌲' },
@@ -62,7 +61,7 @@ const DEFAULT_OVERLAY_SRC = '/overlays/hachunri-179-2-available-land.png';
 let overlayState = loadOverlayState();
 let mapSettings = { width: DEFAULT_MAP_WIDTH, height: DEFAULT_MAP_HEIGHT };
 const tileState = new Map();
-const MAP_STORAGE_KEY = 'noji-ingame-map-v1';
+const MAP_STORAGE_KEY = 'noji-square-map-v1';
 
 function getZoneMeta() {
   const colors = themes[currentTheme]?.colors || themes.frontier.colors;
@@ -88,7 +87,7 @@ function setupThemeSwitcher() {
       currentTheme = button.dataset.theme;
       localStorage.setItem('noji-theme', currentTheme);
       applyTheme(currentTheme);
-      if (projectData) renderHexMap(projectData);
+      if (projectData) renderSquareMap(projectData);
     });
   });
 }
@@ -101,7 +100,7 @@ function applyTheme(theme) {
 }
 
 function clampMapSize(value) {
-  return Math.max(8, Math.min(80, Number.parseInt(value, 10) || DEFAULT_MAP_WIDTH));
+  return Math.max(8, Math.min(120, Number.parseInt(value, 10) || DEFAULT_MAP_WIDTH));
 }
 
 function classifyTile(q, r, width, height) {
@@ -145,30 +144,23 @@ function syncMapSizeInputs() {
   if (heightInput) heightInput.value = mapSettings.height;
 }
 
-function axialToMeters(q, r) {
-  return {
-    x: HEX_SIDE_M * 1.5 * q,
-    y: HEX_SIDE_M * Math.sqrt(3) * (r + q / 2)
-  };
+function tileCenterMeters(q, r) {
+  return { x: q + 0.5, y: r + 0.5 };
 }
 
 function distanceMeters(a, b) {
-  const am = axialToMeters(a.q, a.r);
-  const bm = axialToMeters(b.q, b.r);
+  const am = tileCenterMeters(a.q, a.r);
+  const bm = tileCenterMeters(b.q, b.r);
   return Math.hypot(am.x - bm.x, am.y - bm.y);
 }
 
-function hexCornersArray(cx, cy, size) {
-  const pts = [];
-  for (let i = 0; i < 6; i += 1) {
-    const angle = Math.PI / 180 * (60 * i);
-    pts.push({ x: cx + size * Math.cos(angle), y: cy + size * Math.sin(angle) });
-  }
-  return pts;
-}
-
-function hexCorners(cx, cy, size) {
-  return hexCornersArray(cx, cy, size).map(p => `${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(' ');
+function squareCornersArray(x, y, size) {
+  return [
+    { x, y },
+    { x: x + size, y },
+    { x: x + size, y: y + size },
+    { x, y: y + size }
+  ];
 }
 
 function edgeKey(a, b) {
@@ -177,10 +169,10 @@ function edgeKey(a, b) {
   return [aKey, bKey].sort().join('|');
 }
 
-function collectHexEdges(edgeMap, corners, zone) {
-  for (let i = 0; i < 6; i += 1) {
+function collectSquareEdges(edgeMap, corners, zone) {
+  for (let i = 0; i < 4; i += 1) {
     const a = corners[i];
-    const b = corners[(i + 1) % 6];
+    const b = corners[(i + 1) % 4];
     const key = edgeKey(a, b);
     if (!edgeMap.has(key)) edgeMap.set(key, { a, b, zones: [] });
     edgeMap.get(key).zones.push(zone);
@@ -195,7 +187,7 @@ function render(data) {
   document.querySelector('#level-fill').style.width = `${Math.min(100, (data.land.level / 5) * 100)}%`;
 
   renderResourceBar(data.resources);
-  renderHexMap(data);
+  renderSquareMap(data);
   renderLevels(data.levels, data.land.level);
   renderActions(data.actions);
   renderQuests(data.quests);
@@ -219,7 +211,7 @@ function setMapZoom(next) {
   mapZoom = Math.max(0.5, Math.min(3, next));
   localStorage.setItem('noji-map-zoom', String(mapZoom));
   updateMapZoomLabel();
-  renderHexMap(projectData);
+  renderSquareMap(projectData);
 }
 
 function updateMapZoomLabel() {
@@ -361,20 +353,20 @@ function setupInlineEditor() {
     document.body.classList.toggle('editor-mode', editorEnabled);
     document.querySelector('#inline-editor-panel').setAttribute('aria-hidden', String(!editorEnabled));
     toggle.textContent = editorEnabled ? 'Close Editor' : 'Map Editor';
-    renderHexMap(projectData);
+    renderSquareMap(projectData);
   });
   document.querySelectorAll('[data-editor-tool]').forEach(button => {
     button.addEventListener('click', () => {
       editorTool = button.dataset.editorTool;
       measurePoints = [];
       document.querySelectorAll('[data-editor-tool]').forEach(b => b.classList.toggle('active', b.dataset.editorTool === editorTool));
-      renderHexMap(projectData);
+      renderSquareMap(projectData);
     });
   });
   document.querySelector('#inline-zone-select').addEventListener('change', event => { paintZone = event.target.value; });
   document.querySelector('#brush-size-select').addEventListener('change', event => { brushSize = Number.parseInt(event.target.value, 10) || 1; renderInlineEditorStats(); });
   document.querySelector('#apply-map-size').addEventListener('click', applyMapSizeFromInputs);
-  document.querySelector('#fit-map-view').addEventListener('click', () => { renderHexMap(projectData); renderInlineEditorStats('fit view'); });
+  document.querySelector('#fit-map-view').addEventListener('click', () => { renderSquareMap(projectData); renderInlineEditorStats('fit view'); });
   syncMapSizeInputs();
   document.querySelector('#export-inline-map').addEventListener('click', exportInlineMap);
   document.querySelector('#save-inline-map').addEventListener('click', () => { saveMapToStorage(); renderInlineEditorStats('saved locally'); });
@@ -390,20 +382,18 @@ function renderResourceBar(resources) {
   `).join('');
 }
 
-function renderHexMap(data) {
+function renderSquareMap(data) {
   initTileState();
-  const svg = document.querySelector('#hex-svg');
+  const svg = document.querySelector('#tile-svg');
   const selected = document.querySelector('#selected-tile');
   const legend = document.querySelector('#zone-legend');
   const zoneMeta = getZoneMeta();
-  const Tile = defineHex({ dimensions: HEX_SIZE_PX, orientation: Orientation.FLAT });
-  const grid = new Grid(Tile, rectangle({ width: mapSettings.width, height: mapSettings.height }));
   const counts = {};
-  const minX = -HEX_SIZE_PX, minY = -HEX_SIZE_PX, maxX = mapSettings.width * HEX_SIZE_PX * 1.55, maxY = mapSettings.height * HEX_SIZE_PX * 1.78;
-  const viewWidth = maxX - minX;
-  const viewHeight = maxY - minY;
+  const padding = SQUARE_SIZE_PX;
+  const viewWidth = mapSettings.width * SQUARE_SIZE_PX + padding * 2;
+  const viewHeight = mapSettings.height * SQUARE_SIZE_PX + padding * 2;
 
-  svg.setAttribute('viewBox', `${minX} ${minY} ${viewWidth} ${viewHeight}`);
+  svg.setAttribute('viewBox', `0 0 ${viewWidth} ${viewHeight}`);
   const renderedWidth = viewWidth * mapZoom;
   const renderedHeight = viewHeight * mapZoom;
   svg.style.width = `${renderedWidth}px`;
@@ -424,34 +414,34 @@ function renderHexMap(data) {
 
   const pointByKey = new Map();
   const edgeMap = new Map();
-  for (const hex of grid) {
-    const { x, y } = hexToPoint(hex);
-    const q = hex.q;
-    const r = hex.r;
-    const k = tileKey(q, r);
-    let tile = tileState.get(k);
-    if (!tile) {
-      tile = { q, r, zone: classifyTile(q, r, mapSettings.width, mapSettings.height) };
-      tileState.set(k, tile);
+  for (let r = 0; r < mapSettings.height; r += 1) {
+    for (let q = 0; q < mapSettings.width; q += 1) {
+      const k = tileKey(q, r);
+      let tile = tileState.get(k);
+      if (!tile) {
+        tile = { q, r, zone: classifyTile(q, r, mapSettings.width, mapSettings.height) };
+        tileState.set(k, tile);
+      }
+      const zone = tile.zone;
+      counts[zone] = (counts[zone] || 0) + 1;
+      const x = padding + q * SQUARE_SIZE_PX;
+      const y = padding + r * SQUARE_SIZE_PX;
+      pointByKey.set(k, { x: x + SQUARE_SIZE_PX / 2, y: y + SQUARE_SIZE_PX / 2 });
+      const meta = zoneMeta[zone] || zoneMeta.wild;
+      const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      rect.setAttribute('x', x.toFixed(2));
+      rect.setAttribute('y', y.toFixed(2));
+      rect.setAttribute('width', SQUARE_SIZE_PX.toFixed(2));
+      rect.setAttribute('height', SQUARE_SIZE_PX.toFixed(2));
+      rect.setAttribute('fill', meta.color);
+      rect.setAttribute('class', `tile-tile square-tile zone-${zone}`);
+      collectSquareEdges(edgeMap, squareCornersArray(x, y, SQUARE_SIZE_PX), zone);
+      rect.dataset.q = q;
+      rect.dataset.r = r;
+      rect.dataset.zone = zone;
+      rect.addEventListener('click', () => handleTileClick(tile, rect));
+      svg.appendChild(rect);
     }
-    const zone = tile.zone;
-    counts[zone] = (counts[zone] || 0) + 1;
-    pointByKey.set(k, { x: x + 22, y: y + 22 });
-    const meta = zoneMeta[zone] || zoneMeta.wild;
-    const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
-    const cx = x + 22;
-    const cy = y + 22;
-    const corners = hexCornersArray(cx, cy, HEX_SIZE_PX);
-    const points = corners.map(p => `${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(' ');
-    poly.setAttribute('points', points);
-    poly.setAttribute('fill', meta.color);
-    poly.setAttribute('class', `hex-tile zone-${zone}`);
-    collectHexEdges(edgeMap, corners, zone);
-    poly.dataset.q = q;
-    poly.dataset.r = r;
-    poly.dataset.zone = zone;
-    poly.addEventListener('click', () => handleTileClick(tile, poly));
-    svg.appendChild(poly);
   }
 
   renderZoneBoundaries(svg, edgeMap);
@@ -461,9 +451,9 @@ function renderHexMap(data) {
 
   document.querySelector('#reset-selection').onclick = () => {
     measurePoints = [];
-    document.querySelectorAll('.hex-tile.selected').forEach(el => el.classList.remove('selected'));
+    document.querySelectorAll('.tile-tile.selected').forEach(el => el.classList.remove('selected'));
     selected.textContent = editorEnabled ? editorHelpText() : '타일을 선택해봐.';
-    renderHexMap(data);
+    renderSquareMap(data);
   };
 }
 
@@ -471,11 +461,9 @@ function getBrushTiles(center) {
   const radius = brushSize === 5 ? 2 : brushSize === 3 ? 1 : 0;
   const result = [];
   for (const tile of tileState.values()) {
-    const dq = tile.q - center.q;
-    const dr = tile.r - center.r;
-    const ds = -dq - dr;
-    const distance = Math.max(Math.abs(dq), Math.abs(dr), Math.abs(ds));
-    if (distance <= radius) result.push(tile);
+    const dq = Math.abs(tile.q - center.q);
+    const dr = Math.abs(tile.r - center.r);
+    if (Math.max(dq, dr) <= radius) result.push(tile);
   }
   return result;
 }
@@ -484,8 +472,8 @@ function applyBrush(center) {
   const nextZone = editorTool === 'erase' ? 'wild' : paintZone;
   for (const tile of getBrushTiles(center)) tile.zone = nextZone;
   saveMapToStorage();
-  renderHexMap(projectData);
-  showTile(center, `${brushSize} hex brush`);
+  renderSquareMap(projectData);
+  showTile(center, `${brushSize}m brush`);
 }
 
 function handleTileClick(tile, poly) {
@@ -498,24 +486,24 @@ function handleTileClick(tile, poly) {
   if (editorEnabled && editorTool === 'measure') {
     measurePoints.push({ q: tile.q, r: tile.r });
     if (measurePoints.length > 2) measurePoints = [measurePoints.at(-1)];
-    renderHexMap(projectData);
+    renderSquareMap(projectData);
     if (measurePoints.length === 1) {
-      selected.innerHTML = `<strong>📏 Measure</strong><span>start hex (${tile.q}, ${tile.r})</span><p>끝 hex를 선택해라.</p>`;
+      selected.innerHTML = `<strong>📏 Measure</strong><span>start tile (${tile.q}, ${tile.r})</span><p>끝 타일을 선택해라.</p>`;
     } else {
       const d = distanceMeters(measurePoints[0], measurePoints[1]);
-      selected.innerHTML = `<strong>📏 ${d.toFixed(2)}m</strong><span>center-to-center</span><p>hex (${measurePoints[0].q}, ${measurePoints[0].r}) → (${measurePoints[1].q}, ${measurePoints[1].r})</p>`;
+      selected.innerHTML = `<strong>📏 ${d.toFixed(2)}m</strong><span>center-to-center</span><p>tile (${measurePoints[0].q}, ${measurePoints[0].r}) → (${measurePoints[1].q}, ${measurePoints[1].r})</p>`;
     }
     return;
   }
-  document.querySelectorAll('.hex-tile.selected').forEach(el => el.classList.remove('selected'));
+  document.querySelectorAll('.tile-tile.selected').forEach(el => el.classList.remove('selected'));
   poly.classList.add('selected');
   const meta = zoneMeta[tile.zone];
-  selected.innerHTML = `<strong>${meta.icon} ${meta.label}</strong><span>hex (${tile.q}, ${tile.r}) · 1평 · ${PYEONG_SQM.toFixed(3)}㎡</span><p>${zoneDescription(tile.zone)}</p>`;
+  selected.innerHTML = `<strong>${meta.icon} ${meta.label}</strong><span>tile (${tile.q}, ${tile.r}) · 1m² · ${PYEONG_PER_TILE.toFixed(3)}평</span><p>${zoneDescription(tile.zone)}</p>`;
 }
 
 function showTile(tile, suffix = 'edited') {
   const meta = getZoneMeta()[tile.zone];
-  document.querySelector('#selected-tile').innerHTML = `<strong>${meta.icon} ${meta.label}</strong><span>hex (${tile.q}, ${tile.r}) · ${suffix}</span><p>${zoneDescription(tile.zone)}</p>`;
+  document.querySelector('#selected-tile').innerHTML = `<strong>${meta.icon} ${meta.label}</strong><span>tile (${tile.q}, ${tile.r}) · ${suffix}</span><p>${zoneDescription(tile.zone)}</p>`;
 }
 
 function renderZoneBoundaries(svg, edgeMap) {
@@ -543,7 +531,7 @@ function renderMeasureOverlay(svg, pointByKey) {
     const c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
     c.setAttribute('cx', pt.x);
     c.setAttribute('cy', pt.y);
-    c.setAttribute('r', HEX_SIZE_PX * 0.34);
+    c.setAttribute('r', SQUARE_SIZE_PX * 0.36);
     c.setAttribute('class', 'inline-measure-point');
     svg.appendChild(c);
   }
@@ -572,13 +560,15 @@ function renderInlineEditorStats(extra = '') {
   tileState.forEach(tile => { counts[tile.zone] = (counts[tile.zone] || 0) + 1; });
   const zoneMeta = getZoneMeta();
   const total = tileState.size;
-  const delta = total - TARGET_LAND_PYEONG;
-  const landFitText = delta === 0 ? 'target 550평 exact' : `${Math.abs(delta)}평 ${delta > 0 ? '여유' : '부족'}`;
+  const totalSqm = total * SQM_PER_TILE;
+  const totalPyeong = totalSqm / PYEONG_SQM;
+  const deltaSqm = totalSqm - TARGET_LAND_SQM;
+  const landFitText = Math.abs(deltaSqm) < 0.5 ? 'target 550평 exact' : `${Math.abs(deltaSqm).toFixed(0)}㎡ ${deltaSqm > 0 ? '여유' : '부족'}`;
   const measureText = measurePoints.length === 2 ? ` · 측정 ${distanceMeters(measurePoints[0], measurePoints[1]).toFixed(2)}m` : '';
   el.innerHTML = `
-    <span>맵 ${mapSettings.width}×${mapSettings.height} = ${total}평 / ${(total * PYEONG_SQM).toFixed(1)}㎡</span>
-    <span>실토지 약 ${TARGET_LAND_PYEONG}평 기준 ${landFitText}</span>
-    <span>brush ${brushSize} hex · side ${HEX_SIDE_M.toFixed(3)}m · width ${HEX_WIDTH_M.toFixed(3)}m · height ${HEX_HEIGHT_M.toFixed(3)}m${measureText}</span>
+    <span>맵 ${mapSettings.width}m×${mapSettings.height}m = ${totalSqm.toFixed(0)}㎡ / ${totalPyeong.toFixed(1)}평</span>
+    <span>실토지 약 ${TARGET_LAND_PYEONG}평(${TARGET_LAND_SQM.toFixed(0)}㎡) 기준 ${landFitText}</span>
+    <span>brush ${brushSize}m · tile 1m×1m${measureText}</span>
     <span>${Object.entries(counts).map(([zone, count]) => `${zoneMeta[zone]?.icon || ''} ${zone}: ${count}`).join(' · ')}</span>
     ${extra ? `<span class="good">${extra}</span>` : ''}
   `;
@@ -587,19 +577,18 @@ function renderInlineEditorStats(extra = '') {
 function editorHelpText() {
   if (editorTool === 'paint') return `Paint mode: ${paintZone} zone으로 칠하는 중.`;
   if (editorTool === 'erase') return 'Erase mode: 클릭한 타일을 wild로 되돌림.';
-  if (editorTool === 'measure') return 'Measure mode: 두 hex를 선택하면 m 단위 거리를 표시.';
+  if (editorTool === 'measure') return 'Measure mode: 두 타일을 선택하면 m 단위 거리를 표시.';
   return 'Inspect mode: 기존 맵 상태를 그대로 살펴보는 중.';
 }
 
 function buildMapPayload() {
   return {
     unit: {
-      hexAreaSqm: PYEONG_SQM,
-      hexAreaPyeong: 1,
-      hexSideMeters: Number(HEX_SIDE_M.toFixed(6)),
-      hexWidthMeters: Number(HEX_WIDTH_M.toFixed(6)),
-      hexHeightMeters: Number(HEX_HEIGHT_M.toFixed(6)),
-      coordinateSystem: 'flat-top axial q,r; distance measurements use center coordinates in meters'
+      tileWidthMeters: 1,
+      tileHeightMeters: 1,
+      tileAreaSqm: SQM_PER_TILE,
+      tileAreaPyeong: Number(PYEONG_PER_TILE.toFixed(6)),
+      coordinateSystem: 'square row/column q,r; each tile is 1m x 1m; distance measurements use tile centers in meters'
     },
     grid: { width: mapSettings.width, height: mapSettings.height },
     tiles: [...tileState.values()]
@@ -650,7 +639,7 @@ function applyMapSizeFromInputs() {
   const height = document.querySelector('#map-height-input').value;
   resizeMap(width, height, { preserve: true, save: true });
   measurePoints = [];
-  renderHexMap(projectData);
+  renderSquareMap(projectData);
   renderInlineEditorStats('map resized');
 }
 
@@ -663,7 +652,7 @@ async function importInlineMap(event) {
     if (!applyMapPayload(payload)) throw new Error('invalid map json');
     saveMapToStorage();
     measurePoints = [];
-    renderHexMap(projectData);
+    renderSquareMap(projectData);
     renderInlineEditorStats('loaded json');
   } catch (error) {
     renderInlineEditorStats(`load failed: ${error.message}`);

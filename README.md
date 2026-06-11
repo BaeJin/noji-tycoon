@@ -16,8 +16,8 @@ Vite 기반 정적 웹앱입니다.
 - `src/app.js`: 렌더링 로직
 - `src/styles.css`: 게임 UI 스타일
 - `public/data/project.json`: MVP 데이터
-- `honeycomb-grid`: hex grid 좌표 계산
-- SVG polygon: 빈틈 없는 헥스 맵 렌더링
+- 자체 square grid 좌표 계산
+- SVG rect: 1m×1m 정사각형 맵 렌더링
 
 ## 배포 추천
 
@@ -41,9 +41,8 @@ Supabase가 필요한 시점:
 
 `/map-editor.html`에서 별도 편집기를 제공합니다.
 
-- 1 hex = 1평 = 3.305785㎡
-- 정육각형 변의 길이 약 1.128m 고정
+- 1칸 = 1m×1m = 1㎡
 - zone paint / erase
-- hex 중심점 기준 m 단위 거리 측정
-- 지정된 hex 개수로 평수와 ㎡ 자동 계산
+- 타일 중심점 기준 m 단위 거리 측정
+- 지정된 타일 개수로 ㎡와 평수 자동 계산
 - JSON export 지원

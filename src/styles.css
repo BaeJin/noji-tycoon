@@ -244,7 +244,7 @@ body[data-theme="forest"] .map-frame {
     linear-gradient(135deg, #0e2218, #06100a);
 }
 #hex-svg { width: 100%; height: 620px; display:block; }
-.hex-tile {
+.tile-tile {
   stroke: rgba(18, 23, 16, .82);
   stroke-width: 1.05;
   cursor: pointer;
@@ -252,8 +252,8 @@ body[data-theme="forest"] .map-frame {
   transform-box: fill-box;
   transform-origin: center;
 }
-.hex-tile:hover { filter: brightness(1.28) saturate(1.2); transform: translateY(-1px); }
-.hex-tile.selected { filter: url(#tileGlow) brightness(1.28); stroke: #ffe08a; stroke-width: 2.4; }
+.tile-tile:hover { filter: brightness(1.28) saturate(1.2); transform: translateY(-1px); }
+.tile-tile.selected { filter: url(#tileGlow) brightness(1.28); stroke: #ffe08a; stroke-width: 2.4; }
 .zone-restricted { opacity: .76; }
 .selected-card {
   min-height: 72px;
@@ -271,7 +271,7 @@ body[data-theme="forest"] .map-frame {
 .legend { display:flex; flex-wrap:wrap; gap:8px; margin-top: 12px; }
 .legend-top { margin: 0 0 12px; max-height: 88px; overflow:auto; padding: 2px 0 4px; }
 .legend-chip { display:flex; align-items:center; gap:6px; border:1px solid var(--line); border-radius:999px; padding:7px 10px; background: rgba(0,0,0,.2); color:var(--muted); font-size:12px; }
-.legend-chip i { width:13px; height:13px; clip-path: polygon(25% 0%,75% 0%,100% 50%,75% 100%,25% 100%,0 50%); }
+.legend-chip i { width:13px; height:13px; border-radius: 3px; }
 .quest, .object, .action-card, .player {
   border:1px solid var(--line); border-radius:16px; background: rgba(0,0,0,.2); padding:12px;
 }
@@ -376,13 +376,13 @@ body[data-theme="forest"] .map-frame {
 }
 #editor-svg { width:100%; height:100%; display:block; touch-action:none; cursor:grab; }
 #editor-svg:active { cursor:grabbing; }
-.editor-hex {
+.editor-tile {
   stroke: rgba(205,245,161,.13);
   stroke-width: 1;
   cursor:pointer;
   transition: filter .1s ease, stroke .1s ease;
 }
-.editor-hex:hover { filter:brightness(1.45); stroke:rgba(255,255,255,.75); stroke-width:2; }
+.editor-tile:hover { filter:brightness(1.45); stroke:rgba(255,255,255,.75); stroke-width:2; }
 .measure-point { fill:var(--gold); stroke:#07100a; stroke-width:2; filter:drop-shadow(0 0 6px var(--gold)); }
 .measure-line { stroke:var(--gold); stroke-width:3; stroke-dasharray:7 5; filter:drop-shadow(0 0 5px var(--gold)); }
 .measure-readout {
@@ -510,8 +510,8 @@ body.editor-mode .map-stage { border-color: rgba(184,224,109,.55); box-shadow: 0
   background:rgba(0,0,0,.18);
   padding:5px 8px;
 }
-body.editor-mode .hex-tile { stroke: rgba(205,245,161,.24); stroke-width: 1.25; }
-body.editor-mode .hex-tile:hover { stroke: var(--gold); stroke-width: 2.2; filter: brightness(1.45) saturate(1.25); }
+body.editor-mode .tile-tile { stroke: rgba(205,245,161,.24); stroke-width: 1.25; }
+body.editor-mode .tile-tile:hover { stroke: var(--gold); stroke-width: 2.2; filter: brightness(1.45) saturate(1.25); }
 .inline-measure-point { fill: var(--gold); stroke: #07100a; stroke-width: 2; filter: drop-shadow(0 0 6px var(--gold)); pointer-events:none; }
 .inline-measure-line { stroke: var(--gold); stroke-width: 3; stroke-dasharray: 7 5; filter: drop-shadow(0 0 5px var(--gold)); pointer-events:none; }
 @media (max-width: 720px) {
@@ -557,9 +557,9 @@ body.editor-mode .hex-tile:hover { stroke: var(--gold); stroke-width: 2.2; filte
   color:#102014;
   font-weight:800;
 }
-.hex-tile { stroke: rgba(205,245,161,.10); stroke-width: .7; stroke-opacity: .38; }
+.tile-tile { stroke: rgba(205,245,161,.10); stroke-width: .7; stroke-opacity: .38; shape-rendering: crispEdges; }
 .zone-edge-boundary { stroke: rgba(238, 255, 197, .78); stroke-width: 1.9; stroke-linecap: round; vector-effect: non-scaling-stroke; pointer-events: none; }
-body.editor-mode .hex-tile { stroke: rgba(205,245,161,.16); stroke-width: .75; stroke-opacity: .5; }
+body.editor-mode .tile-tile { stroke: rgba(205,245,161,.16); stroke-width: .75; stroke-opacity: .5; }
 body.editor-mode .zone-edge-boundary { stroke: rgba(240, 193, 90, .95); stroke-width: 2.25; }
 .map-outer-boundary { stroke: rgba(238, 255, 197, .42); stroke-width: 1.35; }
 body.editor-mode .map-outer-boundary { stroke: rgba(238, 255, 197, .55); stroke-width: 1.55; }
@@ -621,7 +621,7 @@ body.editor-mode .map-outer-boundary { stroke: rgba(238, 255, 197, .55); stroke-
 }
 #hex-svg { position: relative; z-index: 1; }
 .map-augment-on .parcel-overlay { opacity: .48; }
-.map-augment-on .hex-tile { opacity: .72; }
+.map-augment-on .tile-tile { opacity: .72; }
 .map-augment-on .zone-edge-boundary { stroke: rgba(255,255,255,.86); }
 
 .augment-toggle small { color: var(--muted); font-size: 11px; }
