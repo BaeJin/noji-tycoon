@@ -72,6 +72,7 @@ let brushSize = 1;
 let terrainMode = 'raise';
 let terrainLevel = 2;
 let contoursVisible = localStorage.getItem('noji-contours') !== 'false';
+let zoneBoundariesVisible = localStorage.getItem('noji-zone-boundaries') === 'true';
 let placedObjects = [];
 let placeType = 'tent';
 let placeRotation = 0;
@@ -630,15 +631,26 @@ function setupMapInteractions() {
   });
 
   const contourToggle = document.querySelector('#map-contour-toggle');
+  const boundaryToggle = document.querySelector('#map-boundary-toggle');
   const syncContourToggle = () => {
     document.body.classList.toggle('contours-off', !contoursVisible);
     contourToggle.classList.toggle('active', contoursVisible);
   };
+  const syncBoundaryToggle = () => {
+    document.body.classList.toggle('zone-boundaries-off', !zoneBoundariesVisible);
+    boundaryToggle.classList.toggle('active', zoneBoundariesVisible);
+  };
   syncContourToggle();
+  syncBoundaryToggle();
   contourToggle.addEventListener('click', () => {
     contoursVisible = !contoursVisible;
     localStorage.setItem('noji-contours', String(contoursVisible));
     syncContourToggle();
+  });
+  boundaryToggle.addEventListener('click', () => {
+    zoneBoundariesVisible = !zoneBoundariesVisible;
+    localStorage.setItem('noji-zone-boundaries', String(zoneBoundariesVisible));
+    syncBoundaryToggle();
   });
 
   mapDom.legend.addEventListener('click', event => {

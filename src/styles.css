@@ -423,6 +423,7 @@ body[data-theme="forest"] .map-frame {
 .zone-restricted { opacity: .8; }
 .zone-edge-boundary { stroke: rgba(238, 255, 197, .78); stroke-width: 1.9; stroke-linecap: round; vector-effect: non-scaling-stroke; pointer-events: none; }
 .map-outer-boundary { stroke: rgba(238, 255, 197, .42); stroke-width: 1.35; }
+body.zone-boundaries-off #line-layer { display: none; }
 body.editor-mode .square-tile { stroke: rgba(205,245,161,.16); stroke-width: .75; stroke-opacity: .5; }
 body.editor-mode .zone-edge-boundary { stroke: rgba(240, 193, 90, .95); stroke-width: 2.25; }
 body.editor-mode .map-outer-boundary { stroke: rgba(238, 255, 197, .55); stroke-width: 1.55; }
