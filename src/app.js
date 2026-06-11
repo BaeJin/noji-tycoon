@@ -12,6 +12,9 @@ const SQUARE_SIZE_PX = 10;
 const MAP_PADDING = SQUARE_SIZE_PX;
 const ZOOM_MIN = 0.35;
 const ZOOM_MAX = 4;
+const TERRAIN_MIN = -10;
+const TERRAIN_MAX = 30;
+const CONTOUR_MAJOR_STEP = 5;
 
 const baseZones = {
   wild: { label: 'Wild Forest', icon: '🌲' },
@@ -58,6 +61,9 @@ let editorEnabled = false;
 let editorTool = 'inspect';
 let paintZone = 'wild';
 let brushSize = 1;
+let terrainMode = 'raise';
+let terrainLevel = 2;
+let contoursVisible = localStorage.getItem('noji-contours') !== 'false';
 let measurePoints = [];
 let mapZoom = Number.parseFloat(localStorage.getItem('noji-map-zoom') || '0');
 const DEFAULT_OVERLAY_SRC = '/overlays/hachunri-179-2-available-land.png';
@@ -89,6 +95,10 @@ function getZoneMeta() {
 }
 
 function tileKey(q, r) { return `${q},${r}`; }
+function tileH(tile) { return tile.h || 0; }
+function clampTerrain(value) {
+  return Math.max(TERRAIN_MIN, Math.min(TERRAIN_MAX, Math.round(Number(value) || 0)));
+}
 
 async function loadProject() {
   const res = await fetch('/data/project.json');
@@ -151,7 +161,7 @@ function resizeMap(width, height, { preserve = true, save = true } = {}) {
     for (let q = 0; q < next.width; q += 1) {
       const k = tileKey(q, r);
       const prior = preserve ? previous.get(k) : null;
-      tileState.set(k, prior ? { ...prior } : { q, r, zone: classifyTile(q, r, next.width, next.height) });
+      tileState.set(k, prior ? { ...prior } : { q, r, zone: classifyTile(q, r, next.width, next.height), h: 0 });
     }
   }
   mapSettings = next;
@@ -206,6 +216,7 @@ function shadeColor(hex, amount) {
 function rebuildFillTable() {
   const meta = getZoneMeta();
   fillTable = {};
+  heightShadeCache.clear();
   for (const [zone, value] of Object.entries(meta)) {
     fillTable[zone] = [
       value.color,
@@ -216,10 +227,20 @@ function rebuildFillTable() {
   }
 }
 
-function fillFor(zone, q, r) {
+const heightShadeCache = new Map();
+
+function fillFor(zone, q, r, h = 0) {
   const shades = fillTable[zone] || fillTable.wild;
   const n = ((q * 73856093) ^ (r * 19349663)) >>> 0;
-  return shades[n % 4];
+  const base = shades[n % 4];
+  if (!h) return base;
+  const key = `${base}:${h}`;
+  let shaded = heightShadeCache.get(key);
+  if (!shaded) {
+    shaded = shadeColor(base, Math.max(-30, Math.min(66, h * 5)));
+    heightShadeCache.set(key, shaded);
+  }
+  return shaded;
 }
 
 /* ---------- main render ---------- */
@@ -252,6 +273,7 @@ function buildMapDom() {
       </filter>
     </defs>
     <g id="tile-layer"></g>
+    <g id="contour-layer"></g>
     <g id="line-layer"></g>
     <g id="measure-layer"></g>
     <rect id="hover-rect" class="hover-rect" visibility="hidden" />
@@ -266,7 +288,7 @@ function buildMapDom() {
       const k = tileKey(q, r);
       let tile = tileState.get(k);
       if (!tile) {
-        tile = { q, r, zone: classifyTile(q, r, mapSettings.width, mapSettings.height) };
+        tile = { q, r, zone: classifyTile(q, r, mapSettings.width, mapSettings.height), h: 0 };
         tileState.set(k, tile);
       }
       const { x, y, size } = tileRectPx(q, r);
@@ -275,7 +297,7 @@ function buildMapDom() {
       rect.setAttribute('y', y);
       rect.setAttribute('width', size);
       rect.setAttribute('height', size);
-      rect.setAttribute('fill', fillFor(tile.zone, q, r));
+      rect.setAttribute('fill', fillFor(tile.zone, q, r, tileH(tile)));
       rect.setAttribute('class', `square-tile zone-${tile.zone}`);
       rect.dataset.q = q;
       rect.dataset.r = r;
@@ -298,7 +320,7 @@ function repaintTiles() {
   for (const [k, rect] of rectByKey) {
     const tile = tileState.get(k);
     if (!tile) continue;
-    rect.setAttribute('fill', fillFor(tile.zone, tile.q, tile.r));
+    rect.setAttribute('fill', fillFor(tile.zone, tile.q, tile.r, tileH(tile)));
     rect.setAttribute('class', `square-tile zone-${tile.zone}`);
   }
 }
@@ -320,40 +342,61 @@ function edgeKey(a, b) {
   return aKey < bKey ? `${aKey}|${bKey}` : `${bKey}|${aKey}`;
 }
 
-function collectSquareEdges(edgeMap, corners, zone) {
+function collectSquareEdges(edgeMap, corners, zone, h) {
   for (let i = 0; i < 4; i += 1) {
     const a = corners[i];
     const b = corners[(i + 1) % 4];
     const key = edgeKey(a, b);
-    if (!edgeMap.has(key)) edgeMap.set(key, { a, b, zones: [] });
-    edgeMap.get(key).zones.push(zone);
+    if (!edgeMap.has(key)) edgeMap.set(key, { a, b, zones: [], hs: [] });
+    const edge = edgeMap.get(key);
+    edge.zones.push(zone);
+    edge.hs.push(h);
   }
 }
 
+function makeEdgeLine(edge, className) {
+  const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+  line.setAttribute('x1', edge.a.x);
+  line.setAttribute('y1', edge.a.y);
+  line.setAttribute('x2', edge.b.x);
+  line.setAttribute('y2', edge.b.y);
+  line.setAttribute('class', className);
+  return line;
+}
+
 function updateBoundaries() {
-  const layer = mapDom.svg.querySelector('#line-layer');
-  if (!layer) return;
+  const svg = mapDom.svg;
+  const layer = svg.querySelector('#line-layer');
+  const contourLayer = svg.querySelector('#contour-layer');
+  if (!layer || !contourLayer) return;
   const edgeMap = new Map();
   for (const tile of tileState.values()) {
     const { x, y, size } = tileRectPx(tile.q, tile.r);
-    collectSquareEdges(edgeMap, squareCornersArray(x, y, size), tile.zone);
+    collectSquareEdges(edgeMap, squareCornersArray(x, y, size), tile.zone, tileH(tile));
   }
   layer.innerHTML = '';
+  contourLayer.innerHTML = '';
   const frag = document.createDocumentFragment();
+  const contourFrag = document.createDocumentFragment();
   for (const edge of edgeMap.values()) {
     const uniqueZones = new Set(edge.zones);
     const isOuterEdge = edge.zones.length === 1;
     const isZoneBoundary = uniqueZones.size > 1;
-    if (!isOuterEdge && !isZoneBoundary) continue;
-    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-    line.setAttribute('x1', edge.a.x);
-    line.setAttribute('y1', edge.a.y);
-    line.setAttribute('x2', edge.b.x);
-    line.setAttribute('y2', edge.b.y);
-    line.setAttribute('class', isOuterEdge ? 'zone-edge-boundary map-outer-boundary' : 'zone-edge-boundary');
-    frag.appendChild(line);
+    if (isOuterEdge || isZoneBoundary) {
+      frag.appendChild(makeEdgeLine(edge, isOuterEdge ? 'zone-edge-boundary map-outer-boundary' : 'zone-edge-boundary'));
+    }
+    if (edge.hs.length === 2 && edge.hs[0] !== edge.hs[1]) {
+      const lo = Math.min(edge.hs[0], edge.hs[1]);
+      const hi = Math.max(edge.hs[0], edge.hs[1]);
+      let major = false;
+      for (let level = lo + 1; level <= hi; level += 1) {
+        if (level % CONTOUR_MAJOR_STEP === 0) { major = true; break; }
+      }
+      contourFrag.appendChild(makeEdgeLine(edge, major ? 'contour-line contour-major' : 'contour-line'));
+    }
   }
   layer.appendChild(frag);
+  contourLayer.appendChild(contourFrag);
 }
 
 /* ---------- zoom / pan ---------- */
@@ -474,6 +517,18 @@ function setupMapInteractions() {
     fitView();
   });
 
+  const contourToggle = document.querySelector('#map-contour-toggle');
+  const syncContourToggle = () => {
+    document.body.classList.toggle('contours-off', !contoursVisible);
+    contourToggle.classList.toggle('active', contoursVisible);
+  };
+  syncContourToggle();
+  contourToggle.addEventListener('click', () => {
+    contoursVisible = !contoursVisible;
+    localStorage.setItem('noji-contours', String(contoursVisible));
+    syncContourToggle();
+  });
+
   mapDom.legend.addEventListener('click', event => {
     const chip = event.target.closest('[data-zone]');
     if (!chip) return;
@@ -511,12 +566,15 @@ function onTileHover(event) {
   if (editorEnabled && (editorTool === 'paint' || editorTool === 'erase')) {
     const zoneIcon = getZoneMeta()[paintZone]?.icon || '';
     hint = `<em>${editorTool === 'paint' ? `🖌 ${zoneIcon} ${paintZone}` : '🧽 → wild'} · ${brushSize}m</em>`;
+  } else if (editorEnabled && editorTool === 'terrain') {
+    const modeText = terrainMode === 'raise' ? '▲ +1m' : terrainMode === 'lower' ? '▼ −1m' : `▦ ${terrainLevel}m 평탄화`;
+    hint = `<em>⛰ ${modeText} · ${brushSize}m</em>`;
   } else if (editorEnabled && editorTool === 'measure') {
     hint = measurePoints.length === 1 ? '<em>📏 끝 타일 클릭</em>' : '<em>📏 시작 타일 클릭</em>';
   } else {
     hint = `<em class="desc">${zoneDescription(tile.zone) || ''}</em>`;
   }
-  tooltip.innerHTML = `<b>${meta.icon} ${meta.label}</b><span>(${tile.q}, ${tile.r})</span>${hint}`;
+  tooltip.innerHTML = `<b>${meta.icon} ${meta.label}</b><span>(${tile.q}, ${tile.r}) · 고도 ${tileH(tile)}m</span>${hint}`;
 
   const wrapRect = mapDom.wrap.getBoundingClientRect();
   let tx = event.clientX - wrapRect.left + 16;
@@ -538,6 +596,10 @@ function hideHover() {
 function handleTileClick(tile, rectEl) {
   if (editorEnabled && ['paint', 'erase'].includes(editorTool)) {
     applyBrush(tile);
+    return;
+  }
+  if (editorEnabled && editorTool === 'terrain') {
+    applyTerrainBrush(tile);
     return;
   }
   if (editorEnabled && editorTool === 'measure') {
@@ -588,13 +650,34 @@ function applyBrush(center) {
     tile.zone = nextZone;
     const rect = rectByKey.get(tileKey(tile.q, tile.r));
     if (rect) {
-      rect.setAttribute('fill', fillFor(nextZone, tile.q, tile.r));
+      rect.setAttribute('fill', fillFor(nextZone, tile.q, tile.r, tileH(tile)));
       rect.setAttribute('class', `square-tile zone-${nextZone}`);
     }
   }
   saveMapToStorage();
   updateBoundaries();
   updateLegend();
+  renderInlineEditorStats();
+}
+
+function applyTerrainBrush(center) {
+  let changed = false;
+  for (const tile of getBrushTiles(center)) {
+    const current = tileH(tile);
+    const next = clampTerrain(
+      terrainMode === 'raise' ? current + 1
+      : terrainMode === 'lower' ? current - 1
+      : terrainLevel
+    );
+    if (next === current) continue;
+    tile.h = next;
+    changed = true;
+    const rect = rectByKey.get(tileKey(tile.q, tile.r));
+    if (rect) rect.setAttribute('fill', fillFor(tile.zone, tile.q, tile.r, next));
+  }
+  if (!changed) return;
+  saveMapToStorage();
+  updateBoundaries();
   renderInlineEditorStats();
 }
 
@@ -670,10 +753,19 @@ function renderInlineEditorStats(extra = '') {
   const deltaSqm = totalSqm - TARGET_LAND_SQM;
   const landFitText = Math.abs(deltaSqm) < 0.5 ? 'target 550평 exact' : `${Math.abs(deltaSqm).toFixed(0)}㎡ ${deltaSqm > 0 ? '여유' : '부족'}`;
   const measureText = measurePoints.length === 2 ? ` · 측정 ${distanceMeters(measurePoints[0], measurePoints[1]).toFixed(2)}m` : '';
+  let hMin = Infinity;
+  let hMax = -Infinity;
+  tileState.forEach(tile => {
+    const h = tileH(tile);
+    if (h < hMin) hMin = h;
+    if (h > hMax) hMax = h;
+  });
+  const terrainText = hMin !== hMax || hMin !== 0 ? `<span>⛰ 고도 ${hMin}m ~ ${hMax}m · 등고선 ${CONTOUR_MAJOR_STEP}m 굵게</span>` : '';
   el.innerHTML = `
     <span>맵 ${mapSettings.width}m×${mapSettings.height}m = ${totalSqm.toFixed(0)}㎡ / ${totalPyeong.toFixed(1)}평</span>
     <span>실토지 약 ${TARGET_LAND_PYEONG}평(${TARGET_LAND_SQM.toFixed(0)}㎡) 기준 ${landFitText}</span>
     <span>tile 1m×1m${measureText}</span>
+    ${terrainText}
     <span>${Object.entries(counts).map(([zone, count]) => `${zoneMeta[zone]?.icon || ''} ${zone}: ${count}`).join(' · ')}</span>
     ${extra ? `<span class="good">${extra}</span>` : ''}
   `;
@@ -915,7 +1007,7 @@ function setEditorTool(tool) {
 function renderEditorContext() {
   const panel = mapDom.editorContext;
   if (!panel) return;
-  if (!editorEnabled || !['paint', 'erase'].includes(editorTool)) {
+  if (!editorEnabled || !['paint', 'erase', 'terrain'].includes(editorTool)) {
     panel.hidden = true;
     panel.innerHTML = '';
     return;
@@ -934,8 +1026,25 @@ function renderEditorContext() {
       <p class="zone-name">${zoneMeta[paintZone].icon} ${zoneMeta[paintZone].label}</p>
     </div>
   ` : '';
+  const terrainHtml = editorTool === 'terrain' ? `
+    <div class="context-section">
+      <h4>지형 (1m 단위)</h4>
+      <div class="brush-seg terrain-modes">
+        <button class="${terrainMode === 'raise' ? 'active' : ''}" data-terrain-mode="raise" title="클릭할 때마다 +1m">▲</button>
+        <button class="${terrainMode === 'lower' ? 'active' : ''}" data-terrain-mode="lower" title="클릭할 때마다 −1m">▼</button>
+        <button class="${terrainMode === 'level' ? 'active' : ''}" data-terrain-mode="level" title="지정 높이로 평탄화">▦</button>
+      </div>
+      ${terrainMode === 'level' ? `
+      <div class="level-stepper">
+        <button data-level-step="-1" title="−1m">−</button>
+        <b>${terrainLevel}m</b>
+        <button data-level-step="1" title="+1m">＋</button>
+      </div>` : `<p class="zone-name">${terrainMode === 'raise' ? '▲ 클릭마다 1m 높이기' : '▼ 클릭마다 1m 낮추기'}</p>`}
+    </div>
+  ` : '';
   panel.innerHTML = `
     ${paletteHtml}
+    ${terrainHtml}
     <div class="context-section">
       <h4>브러시</h4>
       <div class="brush-seg">
@@ -981,6 +1090,18 @@ function setupInlineEditor() {
       renderEditorContext();
       return;
     }
+    const mode = event.target.closest('[data-terrain-mode]');
+    if (mode) {
+      terrainMode = mode.dataset.terrainMode;
+      renderEditorContext();
+      return;
+    }
+    const step = event.target.closest('[data-level-step]');
+    if (step) {
+      terrainLevel = clampTerrain(terrainLevel + Number.parseInt(step.dataset.levelStep, 10));
+      renderEditorContext();
+      return;
+    }
     const brush = event.target.closest('[data-brush]');
     if (brush) {
       brushSize = Number.parseInt(brush.dataset.brush, 10) || 1;
@@ -1013,7 +1134,7 @@ function setupInlineEditor() {
     }
     if (!editorEnabled) return;
     const key = event.key.toLowerCase();
-    const toolByKey = { v: 'inspect', b: 'paint', e: 'erase', m: 'measure' };
+    const toolByKey = { v: 'inspect', b: 'paint', e: 'erase', m: 'measure', t: 'terrain' };
     if (toolByKey[key]) {
       closeEditorSettings();
       setEditorTool(toolByKey[key]);
@@ -1030,7 +1151,8 @@ function buildMapPayload() {
       tileHeightMeters: 1,
       tileAreaSqm: SQM_PER_TILE,
       tileAreaPyeong: Number(PYEONG_PER_TILE.toFixed(6)),
-      coordinateSystem: 'square row/column q,r; each tile is 1m x 1m; distance measurements use tile centers in meters'
+      coordinateSystem: 'square row/column q,r; each tile is 1m x 1m; distance measurements use tile centers in meters',
+      heightSystem: `integer per-tile elevation h in meters (relative), range ${TERRAIN_MIN}..${TERRAIN_MAX}; contour lines drawn between tiles of different h, major line every ${CONTOUR_MAJOR_STEP}m`
     },
     grid: { width: mapSettings.width, height: mapSettings.height },
     tiles: [...tileState.values()]
@@ -1070,7 +1192,10 @@ function applyMapPayload(payload) {
   resizeMap(width, height, { preserve: false, save: false });
   for (const tile of payload.tiles) {
     const k = tileKey(tile.q, tile.r);
-    if (tileState.has(k) && baseZones[tile.zone]) tileState.get(k).zone = tile.zone;
+    const target = tileState.get(k);
+    if (!target) continue;
+    if (baseZones[tile.zone]) target.zone = tile.zone;
+    if (Number.isFinite(tile.h)) target.h = clampTerrain(tile.h);
   }
   syncMapSizeInputs();
   return true;

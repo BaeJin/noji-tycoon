@@ -480,6 +480,22 @@ body.editor-mode .map-outer-boundary { stroke: rgba(238, 255, 197, .55); stroke-
   transition: border-color .12s ease, background .12s ease, transform .12s ease;
 }
 .map-hud-zoom button:hover { border-color: var(--gold); transform: translateY(-1px); }
+.map-hud-zoom button.active { border-color: var(--gold); color: var(--gold); box-shadow: 0 0 10px color-mix(in srgb, var(--gold) 35%, transparent); }
+
+/* contour lines (terrain height) */
+.contour-line {
+  stroke: rgba(255, 226, 150, .5);
+  stroke-width: 1;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+.contour-line.contour-major {
+  stroke: rgba(255, 226, 150, .9);
+  stroke-width: 2;
+}
+body.contours-off #contour-layer { display: none; }
+.map-augment-on .contour-line { stroke: rgba(255, 246, 214, .75); }
 #map-zoom-reset { font-size: 11px; font-family: Orbitron, sans-serif; }
 
 /* hover tooltip */
@@ -684,6 +700,27 @@ body:not(.editor-mode) .editor-settings { display: none; }
   stroke-linejoin: round;
   pointer-events: none;
 }
+
+/* terrain tool context */
+.terrain-modes button { font-size: 13px; }
+.level-stepper {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 7px;
+}
+.level-stepper button {
+  width: 30px;
+  height: 26px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(0,0,0,.24);
+  color: var(--text);
+  font-weight: 800;
+  cursor: pointer;
+}
+.level-stepper button:hover { border-color: var(--gold); }
+.level-stepper b { flex: 1; text-align: center; color: var(--gold); font-family: Orbitron, sans-serif; font-size: 13px; }
 
 .inline-editor-stats {
   display: none;
