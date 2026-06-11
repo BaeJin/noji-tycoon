@@ -78,7 +78,8 @@ const mapDom = {
   get tooltip() { return document.querySelector('#tile-tooltip'); },
   get legend() { return document.querySelector('#zone-legend'); },
   get editorContext() { return document.querySelector('#editor-context'); },
-  get editorSettings() { return document.querySelector('#editor-settings'); }
+  get editorSettings() { return document.querySelector('#editor-settings'); },
+  get overlayPanel() { return document.querySelector('#overlay-panel'); }
 };
 
 function getZoneMeta() {
@@ -712,6 +713,8 @@ function setupMapAugmentControls() {
   const offsetXLabel = document.querySelector('#overlay-offset-x-label');
   const offsetYLabel = document.querySelector('#overlay-offset-y-label');
   const fileInput = document.querySelector('#overlay-image-file');
+  const panelToggle = document.querySelector('#overlay-panel-toggle');
+  const overlayPanel = document.querySelector('#overlay-panel');
   opacity.value = Math.round(overlayState.opacity * 100);
   scale.value = Math.round(overlayState.scale * 100);
   scaleLabel.textContent = `${Math.round(overlayState.scale * 100)}%`;
@@ -720,6 +723,12 @@ function setupMapAugmentControls() {
   offsetXLabel.textContent = `${Math.round(overlayState.offsetX)}%`;
   offsetYLabel.textContent = `${Math.round(overlayState.offsetY)}%`;
   applyOverlayState();
+  panelToggle.addEventListener('click', () => {
+    const willOpen = overlayPanel.hidden;
+    overlayPanel.hidden = !willOpen;
+    panelToggle.setAttribute('aria-expanded', String(willOpen));
+    panelToggle.textContent = willOpen ? '▴' : '▾';
+  });
   opacity.addEventListener('input', () => {
     overlayState.opacity = Number(opacity.value) / 100;
     saveOverlayState();
@@ -745,16 +754,6 @@ function setupMapAugmentControls() {
   });
   document.querySelector('#upload-overlay-image').addEventListener('click', () => fileInput.click());
   fileInput.addEventListener('change', importOverlayImage);
-  document.querySelector('#reset-overlay-image').addEventListener('click', () => {
-    overlayState.src = DEFAULT_OVERLAY_SRC;
-    saveOverlayState();
-    applyOverlayState();
-  });
-  document.querySelector('#delete-overlay-image').addEventListener('click', () => {
-    overlayState.src = '';
-    saveOverlayState();
-    applyOverlayState();
-  });
 }
 
 async function importOverlayImage(event) {

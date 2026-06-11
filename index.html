@@ -56,7 +56,20 @@
           </div>
           <div class="map-buttons">
             <button id="toggle-map-editor" class="primary-map-button">🛠 Map Editor</button>
-            <label class="opacity-control">이미지 투명도 <input id="overlay-opacity" type="range" min="0" max="100" value="48" /></label>
+            <div class="augment-control">
+              <strong>증강 이미지</strong>
+              <div class="augment-row">
+                <label>투명도 <input id="overlay-opacity" type="range" min="0" max="100" value="48" /></label>
+                <button id="overlay-panel-toggle" class="augment-expand" type="button" aria-expanded="false" aria-controls="overlay-panel">▾</button>
+              </div>
+              <div id="overlay-panel" class="augment-panel" hidden>
+                <label>크기 <input id="overlay-scale" type="range" min="20" max="220" value="100" /><span id="overlay-scale-label">100%</span></label>
+                <label>위치 X <input id="overlay-offset-x" type="range" min="-100" max="100" value="0" /><span id="overlay-offset-x-label">0%</span></label>
+                <label>위치 Y <input id="overlay-offset-y" type="range" min="-100" max="100" value="0" /><span id="overlay-offset-y-label">0%</span></label>
+                <button id="upload-overlay-image" type="button">이미지 파일 변경</button>
+                <input id="overlay-image-file" type="file" accept="image/*" hidden />
+              </div>
+            </div>
           </div>
         </div>
 
@@ -76,7 +89,7 @@
             <button data-editor-tool="erase" title="Erase — wild로 되돌리기 (E)"><span>🧽</span><small>지우개</small></button>
             <button data-editor-tool="measure" title="Measure — 거리 측정 (M)"><span>📏</span><small>측정</small></button>
             <i class="rail-divider"></i>
-            <button id="editor-settings-toggle" title="맵 크기 · 파일 · 참고 이미지"><span>⚙</span><small>설정</small></button>
+            <button id="editor-settings-toggle" title="맵 크기 · 파일"><span>⚙</span><small>설정</small></button>
           </div>
 
           <div id="editor-context" class="editor-context" hidden></div>
@@ -103,19 +116,7 @@
                 <button id="export-inline-map">⬇ Export</button>
               </div>
             </section>
-            <section>
-              <h4>참고 이미지</h4>
-              <div class="settings-row">
-                <button id="upload-overlay-image">삽입/변경</button>
-                <button id="reset-overlay-image">기본</button>
-                <button id="delete-overlay-image">삭제</button>
-              </div>
-              <label class="settings-slider">크기 <input id="overlay-scale" type="range" min="20" max="220" value="100" /><span id="overlay-scale-label">100%</span></label>
-              <label class="settings-slider">위치 X <input id="overlay-offset-x" type="range" min="-100" max="100" value="0" /><span id="overlay-offset-x-label">0%</span></label>
-              <label class="settings-slider">위치 Y <input id="overlay-offset-y" type="range" min="-100" max="100" value="0" /><span id="overlay-offset-y-label">0%</span></label>
-            </section>
             <input id="inline-map-file" type="file" accept="application/json,.json" hidden />
-            <input id="overlay-image-file" type="file" accept="image/*" hidden />
           </div>
 
           <div class="map-hud-zoom">
