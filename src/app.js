@@ -580,6 +580,13 @@ function setupMapInteractions() {
 
   svg.addEventListener('pointermove', onTileHover);
   svg.addEventListener('pointerleave', hideHover);
+  svg.addEventListener('pointerout', event => {
+    if (!event.relatedTarget || !svg.contains(event.relatedTarget)) hideHover();
+  });
+  frame.addEventListener('pointerleave', hideHover);
+  mapDom.wrap.addEventListener('pointerleave', hideHover);
+  frame.addEventListener('scroll', hideHover, { passive: true });
+  window.addEventListener('blur', hideHover);
 
   let panState = null;
   frame.addEventListener('pointerdown', event => {
