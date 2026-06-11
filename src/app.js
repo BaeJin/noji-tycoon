@@ -76,8 +76,9 @@ const mapDom = {
   get wrap() { return document.querySelector('#map-frame-wrap'); },
   get canvasLayer() { return document.querySelector('#map-canvas-layer'); },
   get tooltip() { return document.querySelector('#tile-tooltip'); },
-  get selectedCard() { return document.querySelector('#selected-tile'); },
-  get legend() { return document.querySelector('#zone-legend'); }
+  get legend() { return document.querySelector('#zone-legend'); },
+  get editorContext() { return document.querySelector('#editor-context'); },
+  get editorSettings() { return document.querySelector('#editor-settings'); }
 };
 
 function getZoneMeta() {
@@ -106,6 +107,7 @@ function setupThemeSwitcher() {
       applyTheme(currentTheme);
       repaintTiles();
       updateLegend();
+      renderEditorContext();
     });
   });
 }
@@ -287,7 +289,6 @@ function buildMapDom() {
   updateLegend();
   applyZoom();
   renderInlineEditorStats();
-  resetSelectedCard();
 }
 
 function repaintTiles() {
@@ -478,10 +479,6 @@ function setupMapInteractions() {
     applyFocusZone();
     updateLegend();
   });
-
-  mapDom.selectedCard?.addEventListener('click', event => {
-    if (event.target.closest('.card-close')) clearSelection();
-  });
 }
 
 function applyFocusZone() {
@@ -509,8 +506,14 @@ function onTileHover(event) {
   const tooltip = mapDom.tooltip;
   tooltip.hidden = false;
   let hint = '';
-  if (editorEnabled && (editorTool === 'paint' || editorTool === 'erase')) hint = `<em>${editorTool === 'paint' ? `🖌 ${paintZone}` : '🧽 erase'} · ${brushSize}m</em>`;
-  else if (editorEnabled && editorTool === 'measure') hint = '<em>📏 클릭해서 측정</em>';
+  if (editorEnabled && (editorTool === 'paint' || editorTool === 'erase')) {
+    const zoneIcon = getZoneMeta()[paintZone]?.icon || '';
+    hint = `<em>${editorTool === 'paint' ? `🖌 ${zoneIcon} ${paintZone}` : '🧽 → wild'} · ${brushSize}m</em>`;
+  } else if (editorEnabled && editorTool === 'measure') {
+    hint = measurePoints.length === 1 ? '<em>📏 끝 타일 클릭</em>' : '<em>📏 시작 타일 클릭</em>';
+  } else {
+    hint = `<em class="desc">${zoneDescription(tile.zone) || ''}</em>`;
+  }
   tooltip.innerHTML = `<b>${meta.icon} ${meta.label}</b><span>(${tile.q}, ${tile.r})</span>${hint}`;
 
   const wrapRect = mapDom.wrap.getBoundingClientRect();
@@ -540,13 +543,6 @@ function handleTileClick(tile, rectEl) {
     if (measurePoints.length > 2) measurePoints = [measurePoints.at(-1)];
     updateMeasureLayer();
     renderInlineEditorStats();
-    const selected = mapDom.selectedCard;
-    if (measurePoints.length === 1) {
-      if (selected) selected.innerHTML = `<strong>📏 Measure</strong><span>start tile (${tile.q}, ${tile.r})</span><p>끝 타일을 선택하면 거리가 표시됩니다.</p>`;
-    } else {
-      const d = distanceMeters(measurePoints[0], measurePoints[1]);
-      if (selected) selected.innerHTML = `<strong>📏 ${d.toFixed(2)}m</strong><span>center-to-center</span><p>tile (${measurePoints[0].q}, ${measurePoints[0].r}) → (${measurePoints[1].q}, ${measurePoints[1].r})</p>`;
-    }
     return;
   }
   selectTile(tile);
@@ -561,35 +557,12 @@ function selectTile(tile) {
   select.setAttribute('width', size);
   select.setAttribute('height', size);
   select.setAttribute('visibility', 'visible');
-  const meta = getZoneMeta()[tile.zone];
-  const card = mapDom.selectedCard;
-  if (card) {
-    card.innerHTML = `
-      <button class="card-close" title="선택 해제">✕</button>
-      <strong>${meta.icon} ${meta.label}</strong>
-      <span>tile (${tile.q}, ${tile.r}) · 1m² · ${PYEONG_PER_TILE.toFixed(3)}평</span>
-      <p>${zoneDescription(tile.zone)}</p>
-    `;
-  }
 }
 
 function clearSelection() {
   selectedTileKey = null;
   const select = mapDom.svg?.querySelector('#select-rect');
   if (select) select.setAttribute('visibility', 'hidden');
-  resetSelectedCard();
-}
-
-function resetSelectedCard() {
-  const card = mapDom.selectedCard;
-  if (!card) return;
-  card.innerHTML = `<strong>🗺 Hachunri 179-2</strong><span>1칸 = 1m²</span><p>${editorEnabled ? editorHelpText() : '타일 위에 마우스를 올리면 정보, 클릭하면 선택됩니다.'}</p>`;
-}
-
-function showTile(tile, suffix = 'edited') {
-  const meta = getZoneMeta()[tile.zone];
-  const card = mapDom.selectedCard;
-  if (card) card.innerHTML = `<strong>${meta.icon} ${meta.label}</strong><span>tile (${tile.q}, ${tile.r}) · ${suffix}</span><p>${zoneDescription(tile.zone)}</p>`;
 }
 
 /* ---------- brush ---------- */
@@ -621,7 +594,6 @@ function applyBrush(center) {
   updateBoundaries();
   updateLegend();
   renderInlineEditorStats();
-  showTile(center, `${brushSize}m brush`);
 }
 
 /* ---------- measure overlay ---------- */
@@ -650,6 +622,13 @@ function updateMeasureLayer() {
   line.setAttribute('y2', b.y);
   line.setAttribute('class', 'inline-measure-line');
   layer.appendChild(line);
+  const d = distanceMeters(measurePoints[0], measurePoints[1]);
+  const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+  label.setAttribute('x', (a.x + b.x) / 2);
+  label.setAttribute('y', (a.y + b.y) / 2 - SQUARE_SIZE_PX * 0.8);
+  label.setAttribute('class', 'inline-measure-label');
+  label.textContent = `${d.toFixed(2)}m`;
+  layer.appendChild(label);
 }
 
 /* ---------- legend ---------- */
@@ -692,17 +671,10 @@ function renderInlineEditorStats(extra = '') {
   el.innerHTML = `
     <span>맵 ${mapSettings.width}m×${mapSettings.height}m = ${totalSqm.toFixed(0)}㎡ / ${totalPyeong.toFixed(1)}평</span>
     <span>실토지 약 ${TARGET_LAND_PYEONG}평(${TARGET_LAND_SQM.toFixed(0)}㎡) 기준 ${landFitText}</span>
-    <span>brush ${brushSize}m · tile 1m×1m${measureText}</span>
+    <span>tile 1m×1m${measureText}</span>
     <span>${Object.entries(counts).map(([zone, count]) => `${zoneMeta[zone]?.icon || ''} ${zone}: ${count}`).join(' · ')}</span>
     ${extra ? `<span class="good">${extra}</span>` : ''}
   `;
-}
-
-function editorHelpText() {
-  if (editorTool === 'paint') return `Paint: 클릭하면 ${paintZone} zone으로 칠합니다.`;
-  if (editorTool === 'erase') return 'Erase: 클릭한 타일을 wild로 되돌립니다.';
-  if (editorTool === 'measure') return 'Measure: 두 타일을 클릭하면 m 단위 거리를 표시합니다.';
-  return 'Inspect: 맵을 드래그로 이동하고 타일을 클릭해 확인합니다.';
 }
 
 /* ---------- overlay (augment image) ---------- */
@@ -739,8 +711,6 @@ function setupMapAugmentControls() {
   const offsetY = document.querySelector('#overlay-offset-y');
   const offsetXLabel = document.querySelector('#overlay-offset-x-label');
   const offsetYLabel = document.querySelector('#overlay-offset-y-label');
-  const editorOpacity = document.querySelector('#overlay-opacity-editor');
-  const opacityLabel = document.querySelector('#overlay-opacity-label');
   const fileInput = document.querySelector('#overlay-image-file');
   opacity.value = Math.round(overlayState.opacity * 100);
   scale.value = Math.round(overlayState.scale * 100);
@@ -749,19 +719,12 @@ function setupMapAugmentControls() {
   offsetY.value = Math.round(overlayState.offsetY);
   offsetXLabel.textContent = `${Math.round(overlayState.offsetX)}%`;
   offsetYLabel.textContent = `${Math.round(overlayState.offsetY)}%`;
-  editorOpacity.value = Math.round(overlayState.opacity * 100);
-  opacityLabel.textContent = `${Math.round(overlayState.opacity * 100)}%`;
   applyOverlayState();
-  function setOverlayOpacity(percent) {
-    overlayState.opacity = Number(percent) / 100;
-    opacity.value = Math.round(overlayState.opacity * 100);
-    editorOpacity.value = Math.round(overlayState.opacity * 100);
-    opacityLabel.textContent = `${Math.round(overlayState.opacity * 100)}%`;
+  opacity.addEventListener('input', () => {
+    overlayState.opacity = Number(opacity.value) / 100;
     saveOverlayState();
     applyOverlayState();
-  }
-  opacity.addEventListener('input', () => setOverlayOpacity(opacity.value));
-  editorOpacity.addEventListener('input', () => setOverlayOpacity(editorOpacity.value));
+  });
   scale.addEventListener('input', () => {
     overlayState.scale = Number(scale.value) / 100;
     scaleLabel.textContent = `${Math.round(overlayState.scale * 100)}%`;
@@ -820,39 +783,136 @@ function applyOverlayState() {
 
 /* ---------- inline editor ---------- */
 
+function setEditorEnabled(next) {
+  editorEnabled = next;
+  measurePoints = [];
+  updateMeasureLayer();
+  document.body.classList.toggle('editor-mode', editorEnabled);
+  const toggle = document.querySelector('#toggle-map-editor');
+  toggle.textContent = editorEnabled ? '✕ Close Editor' : '🛠 Map Editor';
+  if (!editorEnabled) closeEditorSettings();
+  clearSelection();
+  renderEditorContext();
+  renderInlineEditorStats();
+}
+
+function setEditorTool(tool) {
+  editorTool = tool;
+  measurePoints = [];
+  updateMeasureLayer();
+  document.querySelectorAll('[data-editor-tool]').forEach(b => b.classList.toggle('active', b.dataset.editorTool === editorTool));
+  clearSelection();
+  renderEditorContext();
+  renderInlineEditorStats();
+}
+
+function renderEditorContext() {
+  const panel = mapDom.editorContext;
+  if (!panel) return;
+  if (!editorEnabled || !['paint', 'erase'].includes(editorTool)) {
+    panel.hidden = true;
+    panel.innerHTML = '';
+    return;
+  }
+  const zoneMeta = getZoneMeta();
+  const paletteHtml = editorTool === 'paint' ? `
+    <div class="context-section">
+      <h4>구역</h4>
+      <div class="zone-palette">
+        ${Object.entries(zoneMeta).map(([key, meta]) => `
+          <button class="zone-swatch ${paintZone === key ? 'active' : ''}" data-paint-zone="${key}" title="${meta.label}">
+            <i style="background:${meta.color}"></i><span>${meta.icon}</span>
+          </button>
+        `).join('')}
+      </div>
+      <p class="zone-name">${zoneMeta[paintZone].icon} ${zoneMeta[paintZone].label}</p>
+    </div>
+  ` : '';
+  panel.innerHTML = `
+    ${paletteHtml}
+    <div class="context-section">
+      <h4>브러시</h4>
+      <div class="brush-seg">
+        ${[1, 3, 5].map(size => `<button class="${brushSize === size ? 'active' : ''}" data-brush="${size}">${size}m</button>`).join('')}
+      </div>
+    </div>
+  `;
+  panel.hidden = false;
+}
+
+function openEditorSettings() {
+  const panel = mapDom.editorSettings;
+  panel.hidden = false;
+  document.querySelector('#editor-settings-toggle').classList.add('active');
+  mapDom.editorContext.hidden = true;
+}
+
+function closeEditorSettings() {
+  const panel = mapDom.editorSettings;
+  if (!panel) return;
+  panel.hidden = true;
+  document.querySelector('#editor-settings-toggle')?.classList.remove('active');
+  renderEditorContext();
+}
+
 function setupInlineEditor() {
   const toggle = document.querySelector('#toggle-map-editor');
   if (!toggle || toggle.dataset.bound) return;
   toggle.dataset.bound = 'true';
-  toggle.addEventListener('click', () => {
-    editorEnabled = !editorEnabled;
-    measurePoints = [];
-    updateMeasureLayer();
-    document.body.classList.toggle('editor-mode', editorEnabled);
-    document.querySelector('#inline-editor-panel').setAttribute('aria-hidden', String(!editorEnabled));
-    toggle.textContent = editorEnabled ? '✕ Close Editor' : '🛠 Map Editor';
-    clearSelection();
-    renderInlineEditorStats();
-  });
+  toggle.addEventListener('click', () => setEditorEnabled(!editorEnabled));
+
   document.querySelectorAll('[data-editor-tool]').forEach(button => {
     button.addEventListener('click', () => {
-      editorTool = button.dataset.editorTool;
-      measurePoints = [];
-      updateMeasureLayer();
-      document.querySelectorAll('[data-editor-tool]').forEach(b => b.classList.toggle('active', b.dataset.editorTool === editorTool));
-      clearSelection();
-      renderInlineEditorStats();
+      closeEditorSettings();
+      setEditorTool(button.dataset.editorTool);
     });
   });
-  document.querySelector('#inline-zone-select').addEventListener('change', event => { paintZone = event.target.value; if (editorEnabled) resetSelectedCard(); });
-  document.querySelector('#brush-size-select').addEventListener('change', event => { brushSize = Number.parseInt(event.target.value, 10) || 1; renderInlineEditorStats(); });
+
+  mapDom.editorContext.addEventListener('click', event => {
+    const swatch = event.target.closest('[data-paint-zone]');
+    if (swatch) {
+      paintZone = swatch.dataset.paintZone;
+      renderEditorContext();
+      return;
+    }
+    const brush = event.target.closest('[data-brush]');
+    if (brush) {
+      brushSize = Number.parseInt(brush.dataset.brush, 10) || 1;
+      renderEditorContext();
+      renderInlineEditorStats();
+    }
+  });
+
+  document.querySelector('#editor-settings-toggle').addEventListener('click', () => {
+    if (mapDom.editorSettings.hidden) openEditorSettings();
+    else closeEditorSettings();
+  });
+  document.querySelector('#editor-settings-close').addEventListener('click', closeEditorSettings);
+
   document.querySelector('#apply-map-size').addEventListener('click', applyMapSizeFromInputs);
-  document.querySelector('#fit-map-view').addEventListener('click', () => { fitView(); renderInlineEditorStats('fit view'); });
   syncMapSizeInputs();
   document.querySelector('#export-inline-map').addEventListener('click', exportInlineMap);
   document.querySelector('#save-inline-map').addEventListener('click', () => { saveMapToStorage(); renderInlineEditorStats('saved locally'); });
   document.querySelector('#load-inline-map').addEventListener('click', () => document.querySelector('#inline-map-file').click());
   document.querySelector('#inline-map-file').addEventListener('change', importInlineMap);
+
+  window.addEventListener('keydown', event => {
+    if (event.target instanceof Element && event.target.matches('input, select, textarea')) return;
+    if (event.key === 'Escape') {
+      if (mapDom.editorSettings && !mapDom.editorSettings.hidden) { closeEditorSettings(); return; }
+      if (measurePoints.length) { measurePoints = []; updateMeasureLayer(); renderInlineEditorStats(); return; }
+      if (selectedTileKey) { clearSelection(); return; }
+      if (editorEnabled) setEditorEnabled(false);
+      return;
+    }
+    if (!editorEnabled) return;
+    const key = event.key.toLowerCase();
+    const toolByKey = { v: 'inspect', b: 'paint', e: 'erase', m: 'measure' };
+    if (toolByKey[key]) {
+      closeEditorSettings();
+      setEditorTool(toolByKey[key]);
+    }
+  });
 }
 
 /* ---------- persistence ---------- */
