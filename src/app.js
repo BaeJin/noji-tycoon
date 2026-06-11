@@ -7,6 +7,7 @@ const DEFAULT_MAP_WIDTH = 80;
 const DEFAULT_MAP_HEIGHT = 80;
 const TARGET_LAND_PYEONG = 550;
 const TARGET_LAND_SQM = TARGET_LAND_PYEONG * PYEONG_SQM;
+const DEFAULT_OVERLAY_OPACITY = 0.48;
 const SQUARE_SIZE_PX = 10;
 const MAP_PADDING = SQUARE_SIZE_PX;
 const ZOOM_MIN = 0.35;
@@ -684,7 +685,7 @@ function loadOverlayState() {
   try {
     return {
       src: localStorage.getItem('noji-overlay-src') || DEFAULT_OVERLAY_SRC,
-      opacity: Number.parseFloat(localStorage.getItem('noji-overlay-opacity') || '0.48'),
+      opacity: Number.parseFloat(localStorage.getItem('noji-overlay-opacity') || String(DEFAULT_OVERLAY_OPACITY)),
       scale: Number.parseFloat(localStorage.getItem('noji-overlay-scale') || '1'),
       scaleX: Number.parseFloat(localStorage.getItem('noji-overlay-scale-x') || '1'),
       scaleY: Number.parseFloat(localStorage.getItem('noji-overlay-scale-y') || '1'),
@@ -692,7 +693,7 @@ function loadOverlayState() {
       offsetY: Number.parseFloat(localStorage.getItem('noji-overlay-offset-y') || '0')
     };
   } catch {
-    return { src: DEFAULT_OVERLAY_SRC, opacity: 0.48, scale: 1, scaleX: 1, scaleY: 1, offsetX: 0, offsetY: 0 };
+    return { src: DEFAULT_OVERLAY_SRC, opacity: DEFAULT_OVERLAY_OPACITY, scale: 1, scaleX: 1, scaleY: 1, offsetX: 0, offsetY: 0 };
   }
 }
 
@@ -777,7 +778,87 @@ function setupMapAugmentControls() {
     applyOverlayState();
   });
   document.querySelector('#upload-overlay-image').addEventListener('click', () => fileInput.click());
+  document.querySelector('#bake-overlay-image').addEventListener('click', bakeOverlayImage);
   fileInput.addEventListener('change', importOverlayImage);
+}
+
+function loadImageForCanvas(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('이미지를 불러올 수 없습니다.'));
+    if (!src.startsWith('data:')) img.crossOrigin = 'anonymous';
+    img.src = src;
+  });
+}
+
+function resetOverlayGeometryControls() {
+  overlayState.opacity = DEFAULT_OVERLAY_OPACITY;
+  overlayState.scale = 1;
+  overlayState.scaleX = 1;
+  overlayState.scaleY = 1;
+  overlayState.offsetX = 0;
+  overlayState.offsetY = 0;
+  const opacity = document.querySelector('#overlay-opacity');
+  if (opacity) opacity.value = Math.round(DEFAULT_OVERLAY_OPACITY * 100);
+  const pairs = [
+    ['#overlay-scale', '#overlay-scale-label', 100],
+    ['#overlay-scale-x', '#overlay-scale-x-label', 100],
+    ['#overlay-scale-y', '#overlay-scale-y-label', 100],
+    ['#overlay-offset-x', '#overlay-offset-x-label', 0],
+    ['#overlay-offset-y', '#overlay-offset-y-label', 0]
+  ];
+  for (const [inputSel, labelSel, value] of pairs) {
+    const input = document.querySelector(inputSel);
+    const label = document.querySelector(labelSel);
+    if (input) input.value = value;
+    if (label) label.textContent = `${value}%`;
+  }
+}
+
+async function bakeOverlayImage() {
+  if (!overlayState.src) return;
+  const button = document.querySelector('#bake-overlay-image');
+  const previousText = button.textContent;
+  button.textContent = '저장 중...';
+  button.disabled = true;
+  try {
+    const source = await loadImageForCanvas(overlayState.src);
+    const { w, h } = viewSizePx();
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(w));
+    canvas.height = Math.max(1, Math.round(h));
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    const containScale = Math.min(canvas.width / source.naturalWidth, canvas.height / source.naturalHeight);
+    const baseWidth = source.naturalWidth * containScale;
+    const baseHeight = source.naturalHeight * containScale;
+    const drawWidth = baseWidth * overlayState.scale * overlayState.scaleX;
+    const drawHeight = baseHeight * overlayState.scale * overlayState.scaleY;
+    const centerX = canvas.width / 2 + (overlayState.offsetX / 100) * canvas.width;
+    const centerY = canvas.height / 2 + (overlayState.offsetY / 100) * canvas.height;
+
+    ctx.drawImage(source, centerX - drawWidth / 2, centerY - drawHeight / 2, drawWidth, drawHeight);
+    const bakedSrc = canvas.toDataURL('image/png');
+    const a = document.createElement('a');
+    a.href = bakedSrc;
+    a.download = 'noji-augment-image-zeroed.png';
+    a.click();
+
+    overlayState.src = bakedSrc;
+    resetOverlayGeometryControls();
+    saveOverlayState();
+    applyOverlayState();
+    button.textContent = '저장 완료';
+    setTimeout(() => { button.textContent = previousText; }, 1200);
+  } catch (error) {
+    console.error(error);
+    button.textContent = '저장 실패';
+    setTimeout(() => { button.textContent = previousText; }, 1600);
+  } finally {
+    button.disabled = false;
+  }
 }
 
 async function importOverlayImage(event) {

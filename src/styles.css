@@ -317,7 +317,8 @@ p { color: var(--muted); line-height: 1.45; }
 .augment-panel[hidden] { display: none; }
 .augment-panel input[type="range"] { flex: 1; min-width: 150px; accent-color: var(--gold); }
 .augment-panel span { min-width: 42px; color: var(--muted); font-size: 12px; text-align: right; }
-#upload-overlay-image {
+#upload-overlay-image,
+#bake-overlay-image {
   border: 0;
   border-radius: 12px;
   background: var(--gold);
@@ -326,7 +327,9 @@ p { color: var(--muted); line-height: 1.45; }
   font-weight: 800;
   cursor: pointer;
 }
-#upload-overlay-image:hover { filter: brightness(1.08); }
+#upload-overlay-image:hover,
+#bake-overlay-image:hover { filter: brightness(1.08); }
+#bake-overlay-image:disabled { opacity: .65; cursor: wait; }
 
 /* ---------- legend ---------- */
 .legend { display:flex; flex-wrap:wrap; gap:7px; }
