@@ -96,6 +96,7 @@ let zoneBoundariesVisible = localStorage.getItem('noji-zone-boundaries') === 'tr
 let placedObjects = [];
 let placeType = 'tent';
 let pendingPlaceInstanceId = null;
+let activeMoveSnapshot = null;
 let placeRotation = 0;
 let lastHoverTile = null;
 let objectIdSeq = 1;
@@ -1157,6 +1158,7 @@ function handlePlaceClick(tile) {
   selectedInstance.status = 'placed';
   selectedInstance.updatedAt = new Date().toISOString();
   addInventory(placeType, -1);
+  activeMoveSnapshot = null;
   cancelPlacementMode();
   renderObjectsLayer();
   renderEditorContext();
@@ -1237,6 +1239,7 @@ function renderPlacementHud() {
 }
 
 function startInstancePlacement(instanceId) {
+  restoreActiveMoveSnapshot();
   const inst = instanceById(instanceId);
   if (!inst || inst.status !== 'owned') {
     showToast('제작 완료된 인스턴스만 설치할 수 있습니다');
@@ -1255,7 +1258,9 @@ function startInstancePlacement(instanceId) {
 }
 
 function startObjectPlacement(obj) {
+  restoreActiveMoveSnapshot();
   const inst = instanceById(obj.instanceId);
+  activeMoveSnapshot = { ...obj };
   placedObjects = placedObjects.filter(candidate => candidate.id !== obj.id);
   addInventory(obj.type, 1);
   placeType = obj.type;
@@ -1280,11 +1285,43 @@ function startObjectPlacement(obj) {
   if (lastHoverTile) updateGhost(lastHoverTile);
 }
 
+function startPlacedInstanceMove(instanceId) {
+  const obj = placedObjects.find(candidate => candidate.instanceId === instanceId);
+  if (!obj) {
+    showToast('맵에서 해당 인스턴스 오브젝트를 찾지 못했습니다');
+    return;
+  }
+  startObjectPlacement(obj);
+}
+
+function restoreActiveMoveSnapshot() {
+  if (!activeMoveSnapshot) return false;
+  const obj = activeMoveSnapshot;
+  if (!placedObjects.some(candidate => candidate.id === obj.id)) {
+    placedObjects.push(obj);
+    if (inventoryOf(obj.type) > 0) addInventory(obj.type, -1);
+  }
+  const inst = instanceById(obj.instanceId);
+  if (inst && inst.type === obj.type) {
+    inst.status = 'placed';
+    inst.updatedAt = new Date().toISOString();
+  }
+  activeMoveSnapshot = null;
+  renderObjectsLayer();
+  renderInventory();
+  renderInstancePanel();
+  saveGameState();
+  saveMapToStorage();
+  return true;
+}
+
 function cancelPlacementMode(message = '') {
+  const restored = restoreActiveMoveSnapshot();
   pendingPlaceInstanceId = null;
   hideInstancePicker();
   updateGhost(null);
   if (message) showToast(message);
+  else if (restored) showToast('이동 취소 — 원래 위치로 복구했습니다');
 }
 
 function removeObject(id, { refund = true } = {}) {
@@ -1723,6 +1760,10 @@ function setupInventory() {
       startInstancePlacement(inst.id);
       return;
     }
+    if (act === 'move-instance') {
+      startPlacedInstanceMove(inst.id);
+      return;
+    }
     if (act === 'del-file' || act === 'del-image') {
       if (inst.status !== 'draft') return;
       const id = actBtn.dataset.attachmentId;
@@ -1847,7 +1888,7 @@ function renderInstancePanel() {
       <div class="instance-head">
         <strong>${item.icon || '📦'} ${item.label} <em>${statusLabel}</em></strong>
         <div class="instance-card-actions">
-          ${placed ? '' : owned ? `<button data-instance-act="place-instance">설치</button><button data-instance-act="edit">수정</button>` : `<button data-instance-act="complete">완료</button>`}
+          ${placed ? `<button data-instance-act="move-instance">이동</button>` : owned ? `<button data-instance-act="place-instance">설치</button><button data-instance-act="edit">수정</button>` : `<button data-instance-act="complete">완료</button>`}
           <button class="danger" data-instance-act="delete">삭제</button>
         </div>
       </div>
