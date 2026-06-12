@@ -1380,6 +1380,7 @@ body.modal-open { overflow: hidden; }
 
 /* ---------- map labels / equipment bubbles ---------- */
 .map-object { pointer-events: auto; cursor: pointer; }
+.equip-bubble { pointer-events: none; }
 .equip-bubble.hover { display: none; }
 .map-object:hover .equip-bubble.hover { display: block; }
 .equip-bubble-box {

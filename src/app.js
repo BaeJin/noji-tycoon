@@ -384,6 +384,18 @@ function placedInstancesOf(type) { return gameState.instances.filter(inst => ins
 function equippedInstancesOf(type) { return gameState.instances.filter(inst => inst.type === type && inst.status === 'equipped'); }
 function equippedChildrenOf(parentId) { return gameState.instances.filter(inst => inst.status === 'equipped' && inst.equippedTo === parentId); }
 
+function equippedDescendantsOf(parentId) {
+  const result = [];
+  const visit = id => {
+    for (const child of equippedChildrenOf(id)) {
+      result.push(child);
+      visit(child.id);
+    }
+  };
+  visit(parentId);
+  return result;
+}
+
 function instanceById(id) {
   return gameState.instances.find(inst => inst.id === id) || null;
 }
@@ -404,6 +416,17 @@ function isInstanceInEquipChain(parentId, childId) {
     cursor = instanceById(cursor)?.equippedTo || '';
   }
   return false;
+}
+
+function detachEquippedDescendants(parentId) {
+  const descendants = equippedDescendantsOf(parentId);
+  const now = new Date().toISOString();
+  for (const inst of descendants) {
+    inst.status = 'owned';
+    inst.equippedTo = '';
+    inst.updatedAt = now;
+  }
+  return descendants.length;
 }
 
 function syncPlacedInstanceStatuses() {
@@ -1514,8 +1537,8 @@ function demolishPlacedInstance(instanceId) {
     showToast('맵에서 해당 인스턴스 오브젝트를 찾지 못했습니다');
     return;
   }
-  removeObject(obj.id, { refund: true });
-  showToast('철거 완료 — 보유 상태로 돌아갔습니다');
+  const detached = removeObject(obj.id, { refund: true });
+  showToast(`철거 완료 — 보유 상태로 돌아갔습니다${detached ? ` · 장착품 ${detached}개도 철거` : ''}`);
 }
 
 function restoreActiveMoveSnapshot() {
@@ -1550,8 +1573,10 @@ function demolishActivePlacement() {
   if (activeMoveSnapshot) {
     const inst = instanceById(activeMoveSnapshot.instanceId);
     const label = inst?.label || itemMeta(activeMoveSnapshot.type)?.label || '';
+    const detached = inst ? detachEquippedDescendants(inst.id) : 0;
     activeMoveSnapshot = null;
-    clearPlacementMode(`철거 완료${label ? ` — ${label}` : ''}`);
+    syncInventoryWithInstanceStates();
+    clearPlacementMode(`철거 완료${label ? ` — ${label}` : ''}${detached ? ` · 장착품 ${detached}개도 철거` : ''}`);
     renderObjectsLayer();
     renderInventory();
     renderInstancePanel();
@@ -1565,13 +1590,17 @@ function demolishActivePlacement() {
 function removeObject(id, { refund = true } = {}) {
   const obj = placedObjects.find(o => o.id === id);
   placedObjects = placedObjects.filter(o => o.id !== id);
+  let detached = 0;
   if (obj && refund) {
     addInventory(obj.type, 1);
     const inst = instanceById(obj.instanceId);
     if (inst && inst.status === 'placed') {
       inst.status = 'owned';
+      inst.equippedTo = '';
       inst.updatedAt = new Date().toISOString();
     }
+    if (inst) detached = detachEquippedDescendants(inst.id);
+    syncInventoryWithInstanceStates();
   }
   renderObjectsLayer();
   renderInventory();
@@ -1580,6 +1609,7 @@ function removeObject(id, { refund = true } = {}) {
   saveMapToStorage();
   renderInlineEditorStats(obj ? `${itemMeta(obj.type)?.label || ''} 제거됨${refund ? ' (인벤토리 반환)' : ''}` : '');
   if (lastHoverTile) updateGhost(lastHoverTile);
+  return detached;
 }
 
 function rotatePlaceObject() {
