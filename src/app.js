@@ -696,18 +696,24 @@ function renderObjectsLayer() {
   }
 }
 
+function isPlacementActive() {
+  const inst = instanceById(pendingPlaceInstanceId);
+  return Boolean(inst && inst.status === 'owned' && itemMeta(inst.type));
+}
+
 function updateGhost(tile) {
   const layer = mapDom.svg?.querySelector('#ghost-layer');
   if (!layer) return;
-  if (!tile || !editorEnabled || editorTool !== 'place' || !itemMeta(placeType)) {
+  if (!tile || !isPlacementActive()) {
     layer.innerHTML = '';
     return;
   }
+  const selectedInstance = instanceById(pendingPlaceInstanceId);
+  placeType = selectedInstance.type;
   const anchor = placeAnchorFor(tile, placeType, placeRotation);
   const candidate = { type: placeType, q: anchor.q, r: anchor.r, rot: placeRotation };
   const hit = objectAt(tile.q, tile.r);
-  const selectedInstance = instanceById(pendingPlaceInstanceId);
-  const validInstance = selectedInstance?.type === placeType && selectedInstance.status === 'owned' && availableInstancesForPlacement(placeType).some(inst => inst.id === selectedInstance.id);
+  const validInstance = availableInstancesForPlacement(placeType).some(inst => inst.id === selectedInstance.id);
   const valid = !hit && canPlaceObject(candidate) && inventoryOf(placeType) > 0 && validInstance;
   const { w, h } = footprintOf(placeType, placeRotation);
   const { x, y } = tileRectPx(anchor.q, anchor.r);
@@ -979,7 +985,14 @@ function onTileHover(event) {
   const tooltip = mapDom.tooltip;
   tooltip.hidden = false;
   let hint = '';
-  if (editorEnabled && editorTool === 'place') {
+  if (isPlacementActive()) {
+    const placeMeta = itemMeta(placeType);
+    const inst = instanceById(pendingPlaceInstanceId);
+    const { w, h } = footprintOf(placeType, placeRotation);
+    hint = objectHere
+      ? `<em>📦 ${itemMeta(objectHere.type)?.icon || ''} ${itemMeta(objectHere.type)?.label || ''} — 클릭해서 재설치</em>`
+      : `<em>📦 ${placeMeta?.icon || ''} ${inst?.label || ''} ${w}×${h}m · R 회전 · D 취소</em>`;
+  } else if (editorEnabled && editorTool === 'place') {
     const placeMeta = itemMeta(placeType);
     const { w, h } = footprintOf(placeType, placeRotation);
     hint = objectHere
@@ -998,7 +1011,7 @@ function onTileHover(event) {
   } else {
     hint = `<em class="desc">${zoneDescription(tile.zone) || ''}</em>`;
   }
-  const objectLine = objectHere && !(editorEnabled && ['place', 'erase'].includes(editorTool))
+  const objectLine = objectHere && !isPlacementActive() && !(editorEnabled && ['place', 'erase'].includes(editorTool))
     ? `<span>📦 ${itemMeta(objectHere.type)?.icon || ''} ${itemMeta(objectHere.type)?.label || ''}</span>` : '';
   tooltip.innerHTML = `<b>${meta.icon} ${meta.label}</b><span>(${tile.q}, ${tile.r}) · 고도 ${tileH(tile)}m</span>${objectLine}${hint}`;
 
@@ -1022,12 +1035,12 @@ function hideHover() {
 /* ---------- selection / tile click ---------- */
 
 function handleTileClick(tile, rectEl) {
-  if (editorEnabled && editorTool === 'place') {
+  const hit = objectAt(tile.q, tile.r);
+  if (isPlacementActive() || (hit && !(editorEnabled && editorTool === 'erase'))) {
     handlePlaceClick(tile);
     return;
   }
   if (editorEnabled && editorTool === 'erase') {
-    const hit = objectAt(tile.q, tile.r);
     if (hit) {
       removeObject(hit.id, { refund: true });
       return;
@@ -1102,8 +1115,38 @@ function applyBrush(center) {
 
 /* ---------- placed objects: editing ---------- */
 
-function handlePlaceClick() {
-  showToast('맵 편집 모드에서 설치는 제거되었습니다');
+function handlePlaceClick(tile) {
+  const hit = objectAt(tile.q, tile.r);
+  if (hit) {
+    startObjectPlacement(hit);
+    return;
+  }
+  const selectedInstance = instanceById(pendingPlaceInstanceId);
+  if (!selectedInstance || selectedInstance.status !== 'owned') {
+    showToast('설치할 인스턴스를 먼저 선택하세요');
+    return;
+  }
+  placeType = selectedInstance.type;
+  if (inventoryOf(placeType) <= 0) {
+    showToast(`📦 ${itemMeta(placeType)?.label || ''} 보유 없음`);
+    return;
+  }
+  if (!availableInstancesForPlacement(placeType).some(inst => inst.id === selectedInstance.id)) {
+    cancelPlacementMode('이미 배치된 인스턴스입니다');
+    return;
+  }
+  const anchor = placeAnchorFor(tile, placeType, placeRotation);
+  const candidate = { id: makeId('obj'), type: placeType, q: anchor.q, r: anchor.r, rot: placeRotation, instanceId: selectedInstance.id };
+  if (!canPlaceObject(candidate)) return;
+  placedObjects.push(candidate);
+  addInventory(placeType, -1);
+  cancelPlacementMode();
+  renderObjectsLayer();
+  renderEditorContext();
+  renderInventory();
+  saveMapToStorage();
+  renderInlineEditorStats();
+  updateGhost(tile);
 }
 
 function hideInstancePicker() {
@@ -1111,6 +1154,7 @@ function hideInstancePicker() {
   if (!picker) return;
   picker.hidden = true;
   picker.innerHTML = '';
+  delete picker.dataset.mode;
 }
 
 function showInstancePicker(objectId) {
@@ -1145,6 +1189,76 @@ function selectInstanceForObject(objectId, instanceId) {
   renderObjectsLayer();
   hideInstancePicker();
   showToast(`📍 ${inst.label} 배치 연결`);
+}
+
+function renderPlacementHud() {
+  const hud = mapDom.instancePicker;
+  if (!hud) return;
+  const inst = instanceById(pendingPlaceInstanceId);
+  if (!inst || inst.status !== 'owned') { hideInstancePicker(); return; }
+  const item = itemMeta(inst.type);
+  const { w, h } = footprintOf(inst.type, placeRotation);
+  hud.hidden = false;
+  hud.dataset.mode = 'placement';
+  hud.innerHTML = `
+    <div class="instance-picker-head">
+      <strong>${item?.icon || '📦'} ${item?.label || inst.type}</strong>
+      <button data-placement-act="cancel" title="취소 (D)">✕</button>
+    </div>
+    <div class="placement-hud-body">
+      <b>${inst.label}</b>
+      ${inst.owner ? `<span>${inst.owner}</span>` : ''}
+      <small>${w}×${h}m · ${placeRotation}°</small>
+    </div>
+    <div class="placement-hud-actions">
+      <button data-placement-act="rotate">↻ 회전</button>
+      <button data-placement-act="cancel">취소</button>
+    </div>
+  `;
+}
+
+function startInstancePlacement(instanceId) {
+  const inst = instanceById(instanceId);
+  if (!inst || inst.status !== 'owned') {
+    showToast('제작 완료된 인스턴스만 설치할 수 있습니다');
+    return;
+  }
+  if (!availableInstancesForPlacement(inst.type).some(candidate => candidate.id === inst.id)) {
+    showToast('이미 맵에 배치된 인스턴스입니다');
+    return;
+  }
+  placeType = inst.type;
+  pendingPlaceInstanceId = inst.id;
+  renderPlacementHud();
+  if (lastHoverTile) updateGhost(lastHoverTile);
+  document.querySelector('#map-frame-wrap')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  showToast(`📦 ${inst.label} 설치 모드 — 맵을 클릭하세요`);
+}
+
+function startObjectPlacement(obj) {
+  placedObjects = placedObjects.filter(candidate => candidate.id !== obj.id);
+  addInventory(obj.type, 1);
+  placeType = obj.type;
+  placeRotation = obj.rot;
+  pendingPlaceInstanceId = obj.instanceId || availableInstancesForPlacement(obj.type, obj.id)[0]?.id || null;
+  renderObjectsLayer();
+  renderInventory();
+  saveMapToStorage();
+  if (pendingPlaceInstanceId) {
+    renderPlacementHud();
+    showToast('기존 오브젝트를 집었습니다 — 다시 설치할 위치를 클릭하세요');
+  } else {
+    hideInstancePicker();
+    showToast('연결된 인스턴스가 없습니다');
+  }
+  if (lastHoverTile) updateGhost(lastHoverTile);
+}
+
+function cancelPlacementMode(message = '') {
+  pendingPlaceInstanceId = null;
+  hideInstancePicker();
+  updateGhost(null);
+  if (message) showToast(message);
 }
 
 function removeObject(id, { refund = true } = {}) {
@@ -1562,6 +1676,10 @@ function setupInventory() {
       renderGame();
       return;
     }
+    if (act === 'place-instance') {
+      startInstancePlacement(inst.id);
+      return;
+    }
     if (act === 'del-file' || act === 'del-image') {
       if (inst.status === 'owned') return;
       const id = actBtn.dataset.attachmentId;
@@ -1683,7 +1801,7 @@ function renderInstancePanel() {
       <div class="instance-head">
         <strong>${item.icon || '📦'} ${item.label} <em>${owned ? '보유완료' : '제작중'}</em></strong>
         <div class="instance-card-actions">
-          ${owned ? `<button data-instance-act="edit">수정</button>` : `<button data-instance-act="complete">완료</button>`}
+          ${owned ? `<button data-instance-act="edit">수정</button><button data-instance-act="place-instance">설치</button>` : `<button data-instance-act="complete">완료</button>`}
           <button class="danger" data-instance-act="delete">삭제</button>
         </div>
       </div>
@@ -2093,6 +2211,15 @@ function setupInlineEditor() {
   });
 
   mapDom.instancePicker?.addEventListener('click', event => {
+    const placementAct = event.target.closest('[data-placement-act]');
+    if (placementAct) {
+      if (placementAct.dataset.placementAct === 'cancel') cancelPlacementMode();
+      if (placementAct.dataset.placementAct === 'rotate') {
+        rotatePlaceObject();
+        renderPlacementHud();
+      }
+      return;
+    }
     const close = event.target.closest('[data-picker-act="close"]');
     if (close) { hideInstancePicker(); return; }
     const button = event.target.closest('[data-picker-instance]');
@@ -2121,6 +2248,15 @@ function setupInlineEditor() {
       if (measurePoints.length) { measurePoints = []; updateMeasureLayer(); renderInlineEditorStats(); return; }
       if (selectedTileKey) { clearSelection(); return; }
       if (editorEnabled) setEditorEnabled(false);
+      return;
+    }
+    if (event.key.toLowerCase() === 'd' && isPlacementActive()) {
+      cancelPlacementMode();
+      return;
+    }
+    if (event.key.toLowerCase() === 'r' && isPlacementActive()) {
+      rotatePlaceObject();
+      renderPlacementHud();
       return;
     }
     if (!editorEnabled) return;

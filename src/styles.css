@@ -1365,3 +1365,10 @@ body.modal-open { overflow: hidden; }
   pointer-events: none;
 }
 .instance-picker-list button.active { border-color: var(--gold); background: rgba(240,193,90,.16); }
+.instance-picker[data-mode="placement"] { border-color: rgba(112, 229, 156, .52); }
+.placement-hud-body { display:grid; gap:3px; margin:8px 0 10px; }
+.placement-hud-body b { color:var(--text); font-size:14px; }
+.placement-hud-body span, .placement-hud-body small { color:var(--muted); font-size:12px; }
+.placement-hud-actions { display:flex; gap:8px; }
+.placement-hud-actions button { flex:1; border:1px solid var(--line); border-radius:10px; background:rgba(0,0,0,.25); color:var(--text); padding:8px 9px; cursor:pointer; }
+.placement-hud-actions button:hover { border-color:var(--gold); }
