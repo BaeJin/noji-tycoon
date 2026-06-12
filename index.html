@@ -19,22 +19,13 @@
         </div>
       </div>
       <div class="topbar-right">
-        <div id="resource-bar" class="resource-bar"></div>
-        <button id="open-admin" class="admin-button" title="지형 · 아이템 · 퀘스트 · 레벨 조건 관리">⚙ 관리</button>
+        <div id="current-player" class="current-player"></div>
+        <button id="open-admin" class="admin-button" title="지형 · 아이템 · 퀘스트 · 레벨 조건 · 테마 · 플레이어 관리">⚙ 관리</button>
       </div>
     </header>
 
-    <nav class="theme-switcher" aria-label="design theme selector">
-      <span class="theme-label">THEME</span>
-      <button data-theme="frontier">Frontier</button>
-      <button data-theme="civilization">Civilization</button>
-      <button data-theme="clan">Clan Builder</button>
-      <button data-theme="blueprint">Blueprint</button>
-      <button data-theme="forest" class="active">Forest Night</button>
-    </nav>
-
     <main class="game-shell">
-      <aside class="side-panel left-panel">
+      <section class="layout-card village-area">
         <section class="land-card ornate">
           <p class="label">VILLAGE STATUS</p>
           <h2 id="land-name">Loading...</h2>
@@ -42,17 +33,26 @@
             <span id="land-level">Lv.?</span>
             <div class="meter"><i id="level-fill"></i></div>
           </div>
+          <details class="level-details">
+            <summary>Tech Era <small>unlock ladder</small></summary>
+            <div id="levels" class="era-list"></div>
+          </details>
           <p id="land-summary"></p>
           <div id="upgrade-box" class="upgrade-box"></div>
         </section>
+      </section>
 
-        <section class="panel">
-          <div class="panel-title"><h3>Tech Era</h3><span>unlock ladder</span></div>
-          <div id="levels" class="era-list"></div>
-        </section>
-      </aside>
+      <section class="layout-card quest-area panel quest-panel">
+        <div class="panel-title"><h3>Quest Board</h3><span>missions</span></div>
+        <div class="quest-tabs">
+          <button data-quest-tab="todo" class="active">가능</button>
+          <button data-quest-tab="doing">진행</button>
+          <button data-quest-tab="done">완료</button>
+        </div>
+        <div id="quests" class="quest-list"></div>
+      </section>
 
-      <section class="map-stage">
+      <section class="map-stage map-area">
         <div class="map-toolbar">
           <div class="map-title">
             <strong>Hachunri 179-2</strong>
@@ -141,30 +141,16 @@
         <div id="inline-editor-stats" class="inline-editor-stats"></div>
       </section>
 
-      <aside class="side-panel right-panel">
-        <section class="panel quest-panel">
-          <div class="panel-title"><h3>Quest Board</h3><span>missions</span></div>
-          <div class="quest-tabs">
-            <button data-quest-tab="todo" class="active">가능</button>
-            <button data-quest-tab="doing">진행</button>
-            <button data-quest-tab="done">완료</button>
-          </div>
-          <div id="quests" class="quest-list"></div>
-        </section>
-      </aside>
-    </main>
-
-    <section class="bottom-dock">
-      <div class="panel wide">
-        <div class="panel-title"><h3>Inventory</h3><span>퀘스트 보상 · 클릭하면 인스턴스 관리</span></div>
+      <section class="layout-card inventory-area panel wide">
+        <div class="panel-title"><h3>Items</h3><span>inventory</span></div>
         <div id="inventory" class="inventory-grid"></div>
+      </section>
+
+      <section class="layout-card instance-area panel wide">
+        <div class="panel-title"><h3>Instances</h3><span>crafted items</span></div>
         <div id="instance-panel" class="instance-panel"></div>
-      </div>
-      <div class="panel players-panel">
-        <div class="panel-title"><h3>Players</h3><span>party</span></div>
-        <div id="players" class="players"></div>
-      </div>
-    </section>
+      </section>
+    </main>
   </div>
 
   <div id="admin-modal" class="admin-modal" hidden>
@@ -176,6 +162,8 @@
           <button data-admin-tab="items">아이템</button>
           <button data-admin-tab="quests">퀘스트</button>
           <button data-admin-tab="levels">레벨 조건</button>
+          <button data-admin-tab="themes">테마</button>
+          <button data-admin-tab="players">플레이어</button>
         </nav>
         <button id="close-admin" title="닫기 (Esc)">✕</button>
       </div>

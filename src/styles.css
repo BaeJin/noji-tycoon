@@ -1248,3 +1248,49 @@ body.modal-open { overflow: hidden; }
 .level-unlocks { display:flex; flex-wrap:wrap; gap:5px; margin-top:6px; color:var(--muted); font-size:11px; }
 .level-unlock { border:1px solid rgba(255,255,255,.12); border-radius:999px; padding:3px 7px; background:rgba(0,0,0,.16); color:var(--text); }
 @media (max-width: 720px) { .instance-toolbar, .instance-fields { grid-template-columns:1fr; } .instance-toolbar { align-items:flex-start; flex-direction:column; } }
+
+/* ---------- PC four-zone layout update ---------- */
+.topbar-right { display:flex; align-items:center; gap:10px; flex-wrap:wrap; justify-content:flex-end; }
+.current-player {
+  display:grid; gap:1px; min-width:150px; padding:8px 12px;
+  border:1px solid var(--line); border-radius:14px; background:rgba(0,0,0,.22); text-align:right;
+}
+.current-player span { color:var(--muted); font-size:11px; }
+.current-player b { color:var(--text); font-size:14px; }
+.current-player small { color:var(--gold); font-size:11px; }
+.game-shell {
+  grid-template-columns: 300px minmax(560px, 1fr) 340px;
+  grid-template-rows: minmax(230px, auto) minmax(360px, 1fr);
+  grid-template-areas:
+    "village map inventory"
+    "quest   map instance";
+  align-items: stretch;
+}
+.village-area { grid-area:village; }
+.quest-area { grid-area:quest; min-height:0; overflow:auto; }
+.map-area { grid-area:map; }
+.inventory-area { grid-area:inventory; min-height:0; overflow:auto; }
+.instance-area { grid-area:instance; min-height:0; overflow:auto; }
+.layout-card { min-width:0; }
+.level-details { margin: 10px 0 10px; border:1px solid var(--line); border-radius:14px; background:rgba(0,0,0,.16); overflow:hidden; }
+.level-details summary { cursor:pointer; padding:9px 11px; color:var(--gold); font-family:Orbitron,sans-serif; font-size:12px; list-style:none; }
+.level-details summary::-webkit-details-marker { display:none; }
+.level-details summary::after { content:'▾'; float:right; color:var(--muted); }
+.level-details[open] summary::after { content:'▴'; }
+.level-details summary small { color:var(--muted); font-family:"Gowun Dodum", system-ui, sans-serif; margin-left:6px; letter-spacing:0; }
+.level-details .era-list { padding:0 8px 8px; max-height:260px; overflow:auto; }
+.inventory-area .inventory-grid { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); }
+.instance-area .instance-panel { margin-top:0; }
+.instance-area .instance-fields { grid-template-columns:1fr; }
+.admin-theme-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:9px; }
+.theme-choice { border-radius:14px !important; padding:14px 12px !important; text-align:left; }
+.theme-choice.active { background:var(--gold) !important; color:#102014 !important; font-weight:800; }
+@media (max-width: 1180px) {
+  .game-shell {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto;
+    grid-template-areas: "village" "map" "quest" "inventory" "instance";
+  }
+  .quest-area, .inventory-area, .instance-area { overflow:visible; }
+}
+.instance-fields select { border:1px solid var(--line); border-radius:9px; background:rgba(0,0,0,.26); color:var(--text); padding:7px 9px; font:inherit; }

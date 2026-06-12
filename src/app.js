@@ -146,6 +146,12 @@ function defaultGameState() {
     items: structuredClone(seedItems),
     inventory: {},
     instances: [],
+    players: (projectData?.players || []).map(p => ({
+      id: p.id || makeId('player'),
+      name: p.name || '나',
+      role: p.role || '',
+      status: p.status || 'active'
+    })),
     quests: (projectData?.quests || []).map(q => ({
       id: q.id,
       title: q.title,
@@ -172,6 +178,7 @@ function normalizeGameState(raw) {
     items: {},
     inventory: {},
     instances: [],
+    players: [],
     quests: [],
     levelRequirements: {}
   };
@@ -218,6 +225,16 @@ function normalizeGameState(raw) {
       });
     }
   }
+  const playersSrc = Array.isArray(raw.players) ? raw.players : base.players;
+  state.players = playersSrc
+    .filter(p => p && p.name)
+    .map(p => ({
+      id: p.id || makeId('player'),
+      name: String(p.name),
+      role: String(p.role || ''),
+      status: String(p.status || 'active')
+    }));
+  if (!state.players.length) state.players.push({ id: 'me', name: PLAYER_NAME, role: '접속자', status: 'active' });
   const questsSrc = Array.isArray(raw.quests) ? raw.quests : base.quests;
   for (const q of questsSrc) {
     if (!q || !q.title) continue;
@@ -410,15 +427,15 @@ async function loadProject() {
 }
 
 function setupThemeSwitcher() {
-  document.querySelectorAll('[data-theme]').forEach(button => {
-    button.addEventListener('click', () => {
-      currentTheme = button.dataset.theme;
-      localStorage.setItem('noji-theme', currentTheme);
-      applyTheme(currentTheme);
-      repaintTiles();
-      updateLegend();
-      renderEditorContext();
-    });
+  document.addEventListener('click', event => {
+    const button = event.target.closest('[data-theme]');
+    if (!button) return;
+    currentTheme = button.dataset.theme;
+    localStorage.setItem('noji-theme', currentTheme);
+    applyTheme(currentTheme);
+    repaintTiles();
+    updateLegend();
+    renderEditorContext();
   });
 }
 
@@ -545,12 +562,11 @@ function fillFor(zone, q, r, h = 0) {
 /* ---------- main render ---------- */
 
 function render(data) {
-  renderResourceBar(data.resources);
   initTileState();
   buildMapDom();
   if (!mapZoom || Number.isNaN(mapZoom)) fitView();
   renderGame();
-  renderPlayers(data.players);
+  renderCurrentPlayer();
 }
 
 function renderGame() {
@@ -1544,6 +1560,17 @@ function setupInventory() {
   });
 
   document.querySelector('#instance-panel')?.addEventListener('change', async event => {
+    const field = event.target.dataset.instanceField;
+    if (field) {
+      const row = event.target.closest('[data-instance-id]');
+      const inst = row ? gameState.instances.find(x => x.id === row.dataset.instanceId) : null;
+      if (!inst) return;
+      if (field === 'owner') inst.owner = event.target.value;
+      inst.updatedAt = new Date().toISOString();
+      saveGameState();
+      renderInventory();
+      return;
+    }
     const kind = event.target.dataset.attachmentInput;
     if (!kind) return;
     const row = event.target.closest('[data-instance-id]');
@@ -1626,7 +1653,7 @@ function renderInstancePanel() {
       </div>
       <div class="instance-fields">
         <label>라벨 <input type="text" data-instance-field="label" value="${inst.label}" placeholder="예: 큰 텐트 A" /></label>
-        <label>소유자 <input type="text" data-instance-field="owner" value="${inst.owner}" placeholder="예: Jinbae / 가족 / 친구" /></label>
+        <label>소유자 <select data-instance-field="owner">${playerOptions(inst.owner)}</select></label>
       </div>
       <div class="attachment-row">
         <label class="attach-button">📎 파일 첨부<input type="file" data-attachment-input="files" multiple /></label>
@@ -2155,12 +2182,50 @@ function itemOptions(selected) {
     .join('');
 }
 
+function playerOptions(selected) {
+  return (gameState.players || [])
+    .map(p => `<option value="${p.name}" ${p.name === selected ? 'selected' : ''}>${p.name}${p.role ? ` · ${p.role}` : ''}</option>`)
+    .join('');
+}
+
 function renderAdmin() {
   const body = mapDom.adminBody;
   if (adminTab === 'zones') { body.innerHTML = renderAdminZones(); return; }
   if (adminTab === 'items') { body.innerHTML = renderAdminItems(); return; }
   if (adminTab === 'quests') { body.innerHTML = renderAdminQuests(); return; }
-  body.innerHTML = renderAdminLevels();
+  if (adminTab === 'levels') { body.innerHTML = renderAdminLevels(); return; }
+  if (adminTab === 'themes') { body.innerHTML = renderAdminThemes(); return; }
+  body.innerHTML = renderAdminPlayers();
+}
+
+function renderAdminThemes() {
+  const labels = { frontier: 'Frontier', civilization: 'Civilization', clan: 'Clan Builder', blueprint: 'Blueprint', forest: 'Forest Night' };
+  return `
+    <p class="admin-help">대시보드 테마를 선택합니다. 선택값은 이 브라우저에 저장됩니다.</p>
+    <div class="admin-theme-grid">
+      ${Object.keys(themes).map(key => `<button data-theme="${key}" class="theme-choice ${currentTheme === key ? 'active' : ''}">${labels[key] || key}</button>`).join('')}
+    </div>
+  `;
+}
+
+function renderAdminPlayers() {
+  const rows = (gameState.players || []).map(player => `
+    <div class="admin-row" data-player-id="${player.id}">
+      <input type="text" class="label-input" data-field="name" value="${player.name}" placeholder="플레이어 이름" />
+      <input type="text" class="label-input" data-field="role" value="${player.role || ''}" placeholder="역할" />
+      <select data-field="status">
+        <option value="active" ${player.status === 'active' ? 'selected' : ''}>active</option>
+        <option value="invited_later" ${player.status === 'invited_later' ? 'selected' : ''}>invited_later</option>
+        <option value="inactive" ${player.status === 'inactive' ? 'selected' : ''}>inactive</option>
+      </select>
+      <button class="danger" data-act="delete-player">삭제</button>
+    </div>
+  `).join('');
+  return `
+    <p class="admin-help">등록된 플레이어를 관리합니다. 인스턴스 소유자는 이 목록에서 선택됩니다. 첫 번째 플레이어가 헤더 접속자 카드에 표시됩니다.</p>
+    ${rows}
+    <button class="admin-add" data-act="add-player">＋ 플레이어 추가</button>
+  `;
 }
 
 function renderAdminZones() {
@@ -2365,6 +2430,21 @@ function onAdminInput(event) {
     else if (field === 'req-count') req.count = Math.max(1, Number.parseInt(value, 10) || 1);
     saveGameState();
     renderVillagePanel();
+    return;
+  }
+  const playerRow = event.target.closest('[data-player-id]');
+  if (playerRow) {
+    const player = gameState.players.find(p => p.id === playerRow.dataset.playerId);
+    if (!player) return;
+    if (field === 'name') {
+      const oldName = player.name;
+      player.name = value || PLAYER_NAME;
+      for (const inst of gameState.instances) if (inst.owner === oldName) inst.owner = player.name;
+    } else if (field === 'role') player.role = value;
+    else if (field === 'status') player.status = value;
+    saveGameState();
+    renderCurrentPlayer();
+    renderInstancePanel();
   }
 }
 
@@ -2412,6 +2492,14 @@ function onAdminClick(event) {
     saveGameState();
     renderAdmin();
     renderQuestBoard();
+    return;
+  }
+  if (act === 'add-player') {
+    gameState.players.push({ id: makeId('player'), name: '새 플레이어', role: '', status: 'active' });
+    saveGameState();
+    renderAdmin();
+    renderCurrentPlayer();
+    renderInstancePanel();
     return;
   }
 
@@ -2549,6 +2637,23 @@ function onAdminClick(event) {
       renderVillagePanel();
     }
   }
+
+  const playerRow = event.target.closest('[data-player-id]');
+  if (playerRow) {
+    const id = playerRow.dataset.playerId;
+    if (act === 'delete-player') {
+      if (!armDanger(actBtn)) return;
+      const player = gameState.players.find(p => p.id === id);
+      gameState.players = gameState.players.filter(p => p.id !== id);
+      if (!gameState.players.length) gameState.players.push({ id: 'me', name: PLAYER_NAME, role: '접속자', status: 'active' });
+      const fallback = gameState.players[0].name;
+      if (player) for (const inst of gameState.instances) if (inst.owner === player.name) inst.owner = fallback;
+      saveGameState();
+      renderAdmin();
+      renderCurrentPlayer();
+      renderInstancePanel();
+    }
+  }
 }
 
 /* ---------- persistence ---------- */
@@ -2659,10 +2764,11 @@ async function importInlineMap(event) {
 
 /* ---------- misc panels ---------- */
 
-function renderPlayers(players) {
-  document.querySelector('#players').innerHTML = players.map(p => `
-    <article class="player ${statusTone[p.status] || ''}"><b>${p.name}</b><span>${p.role}</span></article>
-  `).join('');
+function renderCurrentPlayer() {
+  const el = document.querySelector('#current-player');
+  if (!el) return;
+  const player = (gameState.players || [])[0] || { name: PLAYER_NAME, role: '접속자', status: 'active' };
+  el.innerHTML = `<span>접속자</span><b>👤 ${player.name}</b>${player.role ? `<small>${player.role}</small>` : ''}`;
 }
 
 loadProject().catch(err => {
