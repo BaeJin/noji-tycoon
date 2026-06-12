@@ -115,6 +115,7 @@ let pendingCompleteId = null;
 let pendingCompleteTimer = null;
 let adminTab = 'zones';
 let toastTimer = null;
+let selectedInventoryItem = null;
 const MAP_STORAGE_KEY = 'noji-square-map-v1';
 const GAME_STORAGE_KEY = 'noji-game-v1';
 
@@ -144,6 +145,7 @@ function defaultGameState() {
     zones: structuredClone(seedZones),
     items: structuredClone(seedItems),
     inventory: {},
+    instances: [],
     quests: (projectData?.quests || []).map(q => ({
       id: q.id,
       title: q.title,
@@ -151,7 +153,9 @@ function defaultGameState() {
       method: '',
       unlockLevel: 0,
       prereq: null,
+      materials: [],
       rewards: [],
+      materialsGranted: false,
       status: 'todo',
       assignee: ''
     })),
@@ -167,6 +171,7 @@ function normalizeGameState(raw) {
     zones: {},
     items: {},
     inventory: {},
+    instances: [],
     quests: [],
     levelRequirements: {}
   };
@@ -198,6 +203,21 @@ function normalizeGameState(raw) {
       if (state.items[key]) state.inventory[key] = Math.max(0, Number.parseInt(count, 10) || 0);
     }
   }
+  if (Array.isArray(raw.instances)) {
+    for (const inst of raw.instances) {
+      if (!inst || !state.items[inst.type]) continue;
+      state.instances.push({
+        id: inst.id || makeId('inst'),
+        type: inst.type,
+        label: String(inst.label || state.items[inst.type].label || '인스턴스'),
+        owner: String(inst.owner || ''),
+        files: normalizeAttachments(inst.files),
+        images: normalizeAttachments(inst.images),
+        createdAt: inst.createdAt || new Date().toISOString(),
+        updatedAt: inst.updatedAt || inst.createdAt || new Date().toISOString()
+      });
+    }
+  }
   const questsSrc = Array.isArray(raw.quests) ? raw.quests : base.quests;
   for (const q of questsSrc) {
     if (!q || !q.title) continue;
@@ -208,9 +228,11 @@ function normalizeGameState(raw) {
       method: String(q.method || ''),
       unlockLevel: Math.max(0, Math.min(maxVillageLevel(), Number.parseInt(q.unlockLevel, 10) || 0)),
       prereq: q.prereq || null,
+      materials: normalizeItemCounts(q.materials, state.items),
       rewards: (Array.isArray(q.rewards) ? q.rewards : [])
         .filter(rw => rw && state.items[rw.item])
         .map(rw => ({ item: rw.item, count: Math.max(1, Number.parseInt(rw.count, 10) || 1) })),
+      materialsGranted: Boolean(q.materialsGranted),
       status: ['todo', 'doing', 'done'].includes(q.status) ? q.status : 'todo',
       assignee: String(q.assignee || '')
     });
@@ -235,11 +257,33 @@ function loadGameState() {
     gameState = defaultGameState();
   }
   if (!gameState.items[placeType]) placeType = Object.keys(gameState.items)[0] || 'tent';
+  if (!selectedInventoryItem || !gameState.items[selectedInventoryItem]) selectedInventoryItem = placeType;
   if (!gameState.zones[paintZone]) paintZone = 'wild';
 }
 
 function saveGameState() {
   localStorage.setItem(GAME_STORAGE_KEY, JSON.stringify(gameState));
+}
+
+function normalizeAttachments(value) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter(file => file && typeof file === 'object')
+    .map(file => ({
+      id: file.id || makeId('att'),
+      name: String(file.name || 'attachment'),
+      type: String(file.type || ''),
+      size: Number.parseInt(file.size, 10) || 0,
+      dataUrl: String(file.dataUrl || ''),
+      addedAt: file.addedAt || new Date().toISOString()
+    }))
+    .filter(file => file.dataUrl);
+}
+
+function normalizeItemCounts(value, items = gameState?.items || {}) {
+  return (Array.isArray(value) ? value : [])
+    .filter(row => row && items[row.item])
+    .map(row => ({ item: row.item, count: Math.max(1, Number.parseInt(row.count, 10) || 1) }));
 }
 
 function makeId(prefix) {
@@ -263,6 +307,7 @@ function itemTint(type) {
 function inventoryOf(type) { return gameState.inventory[type] || 0; }
 function placedCountOf(type) { return placedObjects.filter(obj => obj.type === type).length; }
 function ownedOf(type) { return inventoryOf(type) + placedCountOf(type); }
+function instancesOf(type) { return gameState.instances.filter(inst => inst.type === type); }
 
 function addInventory(type, delta) {
   if (!itemMeta(type)) return;
@@ -513,6 +558,7 @@ function renderGame() {
   renderLevels();
   renderQuestBoard();
   renderInventory();
+  renderInstancePanel();
   renderInlineEditorStats();
 }
 
@@ -1253,11 +1299,17 @@ function renderVillagePanel() {
 
 function renderLevels() {
   const currentLevel = gameState.village.level;
-  document.querySelector('#levels').innerHTML = (projectData.levels || []).map(level => `
+  document.querySelector('#levels').innerHTML = (projectData.levels || []).map(level => {
+    const unlocks = Object.entries(gameState.items)
+      .filter(([, it]) => (it.unlockLevel || 0) === level.level)
+      .map(([key, it]) => `<span class="level-unlock" data-level-item="${key}">${it.icon || '📦'} ${it.label}</span>`)
+      .join('');
+    return `
     <article class="era ${level.level === currentLevel ? 'current' : level.level < currentLevel ? 'done' : 'locked'}">
-      <b>Lv.${level.level}</b><div><strong>${level.name}</strong><p>${level.description}</p></div>
+      <b>Lv.${level.level}</b><div><strong>${level.name}</strong><p>${level.description}</p>${unlocks ? `<div class="level-unlocks">해금 아이템 ${unlocks}</div>` : ''}</div>
     </article>
-  `).join('');
+  `;
+  }).join('');
 }
 
 /* ---------- quest board ---------- */
@@ -1275,9 +1327,9 @@ function isQuestVisible(q) {
   return true;
 }
 
-function rewardText(rewards) {
-  if (!rewards?.length) return '';
-  return rewards.map(rw => `${itemMeta(rw.item)?.icon || '📦'} ${itemMeta(rw.item)?.label || rw.item} ×${rw.count}`).join(' · ');
+function rewardText(items) {
+  if (!items?.length) return '';
+  return items.map(rw => `${itemMeta(rw.item)?.icon || '📦'} ${itemMeta(rw.item)?.label || rw.item} ×${rw.count}`).join(' · ');
 }
 
 function renderQuestBoard() {
@@ -1304,6 +1356,7 @@ function renderQuestBoard() {
   }
   listEl.innerHTML = quests.map(q => {
     const rewards = rewardText(q.rewards);
+    const materials = rewardText(q.materials);
     const confirming = pendingCompleteId === q.id;
     return `
     <article class="quest q-${q.status}" data-quest-id="${q.id}">
@@ -1311,6 +1364,7 @@ function renderQuestBoard() {
       <h3>${q.title}</h3>
       ${q.desc ? `<p>${q.desc}</p>` : ''}
       ${q.method ? `<p class="q-method">▶ ${q.method}</p>` : ''}
+      ${materials ? `<div class="q-materials">🧰 재료 ${materials}${q.materialsGranted ? ' · 지급됨' : ''}</div>` : ''}
       ${rewards ? `<div class="q-rewards">🎁 ${rewards}</div>` : ''}
       ${q.status === 'todo' ? '<button class="q-action" data-quest-act="start">▶ 수행하기</button>' : ''}
       ${q.status === 'doing' ? `
@@ -1343,8 +1397,12 @@ function setupQuestBoard() {
     if (act === 'start' && quest.status === 'todo') {
       quest.status = 'doing';
       quest.assignee = PLAYER_NAME;
+      if (!quest.materialsGranted) {
+        for (const mt of quest.materials || []) addInventory(mt.item, mt.count);
+        quest.materialsGranted = true;
+      }
       saveGameState();
-      showToast(`▶ 퀘스트 시작: ${quest.title}`);
+      showToast(`▶ 퀘스트 시작: ${quest.title}${quest.materials?.length ? ' · 재료 지급' : ''}`);
       activeQuestTab = 'doing';
       renderQuestBoard();
       return;
@@ -1386,7 +1444,7 @@ function completeQuest(quest) {
   renderGame();
 }
 
-/* ---------- inventory ---------- */
+/* ---------- inventory + item instances ---------- */
 
 function renderInventory() {
   const el = document.querySelector('#inventory');
@@ -1400,13 +1458,15 @@ function renderInventory() {
     const locked = !isItemUnlocked(key);
     const stock = inventoryOf(key);
     const placed = placedCountOf(key);
+    const instCount = instancesOf(key).length;
     return `
-    <button class="inv-card ${locked ? 'locked' : ''} ${!locked && stock === 0 ? 'empty' : ''}" data-inv-item="${key}"
-      title="${locked ? `Lv.${it.unlockLevel}에 해금` : `${it.label} ${it.w}×${it.h}m — 클릭하면 설치 모드`}">
+    <button class="inv-card ${selectedInventoryItem === key ? 'selected' : ''} ${locked ? 'locked' : ''} ${!locked && stock === 0 ? 'empty' : ''}" data-inv-item="${key}"
+      title="${locked ? `Lv.${it.unlockLevel}에 해금` : `${it.label} ${it.w}×${it.h}m — 클릭하면 인스턴스 목록`}">
       <span class="inv-icon">${locked ? '🔒' : it.icon}</span>
       <small>${it.label}</small>
       <i>${it.w}×${it.h}m${locked ? ` · Lv.${it.unlockLevel}` : ''}</i>
       ${!locked ? `<b class="inv-count">${stock}</b>` : ''}
+      ${!locked ? `<em class="inv-made">제작 ${instCount}</em>` : ''}
       ${!locked && placed ? `<em class="inv-placed">설치 ${placed}</em>` : ''}
     </button>
   `;
@@ -1423,15 +1483,184 @@ function setupInventory() {
       showToast(`🔒 ${itemMeta(key)?.label || ''}은(는) 마을 Lv.${gameState.items[key].unlockLevel}에 해금됩니다`);
       return;
     }
-    if (inventoryOf(key) <= 0) {
-      showToast(`📦 ${itemMeta(key)?.label || ''} 보유 없음 — 퀘스트 보상으로 획득하세요`);
+    selectedInventoryItem = key;
+    renderInventory();
+    renderInstancePanel();
+  });
+
+  document.querySelector('#instance-panel')?.addEventListener('click', event => {
+    const actBtn = event.target.closest('[data-instance-act]');
+    if (!actBtn) return;
+    const act = actBtn.dataset.instanceAct;
+    const type = actBtn.closest('[data-instance-type]')?.dataset.instanceType || selectedInventoryItem;
+    const item = itemMeta(type);
+    if (!item) return;
+    if (act === 'place') {
+      if (inventoryOf(type) <= 0) {
+        showToast(`📦 ${item.label || ''} 보유 없음 — 퀘스트 재료/보상으로 획득하세요`);
+        return;
+      }
+      placeType = type;
+      if (!editorEnabled) setEditorEnabled(true);
+      setEditorTool('place');
+      document.querySelector('#map-frame-wrap')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
       return;
     }
-    placeType = key;
-    if (!editorEnabled) setEditorEnabled(true);
-    setEditorTool('place');
-    document.querySelector('#map-frame-wrap')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    if (act === 'create') {
+      createInstance(type);
+      return;
+    }
+    const row = actBtn.closest('[data-instance-id]');
+    const inst = row ? gameState.instances.find(x => x.id === row.dataset.instanceId) : null;
+    if (!inst) return;
+    if (act === 'delete') {
+      if (!armDanger(actBtn)) return;
+      gameState.instances = gameState.instances.filter(x => x.id !== inst.id);
+      saveGameState();
+      renderGame();
+      return;
+    }
+    if (act === 'del-file' || act === 'del-image') {
+      const id = actBtn.dataset.attachmentId;
+      if (act === 'del-file') inst.files = inst.files.filter(file => file.id !== id);
+      else inst.images = inst.images.filter(file => file.id !== id);
+      inst.updatedAt = new Date().toISOString();
+      saveGameState();
+      renderInstancePanel();
+    }
   });
+
+  document.querySelector('#instance-panel')?.addEventListener('input', event => {
+    const field = event.target.dataset.instanceField;
+    if (!field) return;
+    const row = event.target.closest('[data-instance-id]');
+    const inst = row ? gameState.instances.find(x => x.id === row.dataset.instanceId) : null;
+    if (!inst) return;
+    if (field === 'label') inst.label = event.target.value;
+    if (field === 'owner') inst.owner = event.target.value;
+    inst.updatedAt = new Date().toISOString();
+    saveGameState();
+    renderInventory();
+  });
+
+  document.querySelector('#instance-panel')?.addEventListener('change', async event => {
+    const kind = event.target.dataset.attachmentInput;
+    if (!kind) return;
+    const row = event.target.closest('[data-instance-id]');
+    const inst = row ? gameState.instances.find(x => x.id === row.dataset.instanceId) : null;
+    if (!inst) return;
+    try {
+      const files = await filesToAttachments([...event.target.files]);
+      if (kind === 'images') inst.images.push(...files.filter(file => file.type.startsWith('image/')));
+      else inst.files.push(...files);
+      inst.updatedAt = new Date().toISOString();
+      saveGameState();
+      renderInstancePanel();
+      showToast(`첨부 ${files.length}개 저장`);
+    } catch (error) {
+      showToast(`첨부 실패: ${error.message}`);
+    } finally {
+      event.target.value = '';
+    }
+  });
+}
+
+function createInstance(type) {
+  const item = itemMeta(type);
+  if (!item) return;
+  gameState.instances.unshift({
+    id: makeId('inst'),
+    type,
+    label: `${item.label} #${instancesOf(type).length + 1}`,
+    owner: PLAYER_NAME,
+    files: [],
+    images: [],
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  });
+  selectedInventoryItem = type;
+  saveGameState();
+  renderGame();
+  showToast(`🛠️ ${item.label} 인스턴스 제작`);
+}
+
+function fileToAttachment(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve({
+      id: makeId('att'),
+      name: file.name,
+      type: file.type || 'application/octet-stream',
+      size: file.size,
+      dataUrl: String(reader.result || ''),
+      addedAt: new Date().toISOString()
+    });
+    reader.onerror = () => reject(new Error(`${file.name} 읽기 실패`));
+    reader.readAsDataURL(file);
+  });
+}
+
+async function filesToAttachments(files) {
+  const maxBytes = 2.5 * 1024 * 1024;
+  const tooLarge = files.find(file => file.size > maxBytes);
+  if (tooLarge) throw new Error(`${tooLarge.name}이 너무 큼(2.5MB 이하 권장)`);
+  return Promise.all(files.map(fileToAttachment));
+}
+
+function renderInstancePanel() {
+  const panel = document.querySelector('#instance-panel');
+  if (!panel) return;
+  const type = selectedInventoryItem && gameState.items[selectedInventoryItem] ? selectedInventoryItem : Object.keys(gameState.items)[0];
+  selectedInventoryItem = type || null;
+  if (!type) {
+    panel.innerHTML = '<p class="quest-empty">아이템을 먼저 정의하세요.</p>';
+    return;
+  }
+  const item = itemMeta(type);
+  const instances = instancesOf(type);
+  const rows = instances.map(inst => `
+    <article class="instance-card" data-instance-id="${inst.id}">
+      <div class="instance-head">
+        <strong>${item.icon || '📦'} ${item.label}</strong>
+        <button class="danger" data-instance-act="delete">삭제</button>
+      </div>
+      <div class="instance-fields">
+        <label>라벨 <input type="text" data-instance-field="label" value="${inst.label}" placeholder="예: 큰 텐트 A" /></label>
+        <label>소유자 <input type="text" data-instance-field="owner" value="${inst.owner}" placeholder="예: Jinbae / 가족 / 친구" /></label>
+      </div>
+      <div class="attachment-row">
+        <label class="attach-button">📎 파일 첨부<input type="file" data-attachment-input="files" multiple /></label>
+        <label class="attach-button">🖼️ 이미지 첨부<input type="file" data-attachment-input="images" accept="image/*" multiple /></label>
+      </div>
+      ${renderAttachmentList(inst.files, 'file')}
+      ${renderImageList(inst.images)}
+    </article>
+  `).join('');
+  panel.innerHTML = `
+    <div class="instance-toolbar" data-instance-type="${type}">
+      <div><b>${item.icon || '📦'} ${item.label}</b><span> 보유 ${inventoryOf(type)} · 제작 ${instances.length} · 설치 ${placedCountOf(type)}</span></div>
+      <div class="instance-actions">
+        <button data-instance-act="create">🛠️ 제작</button>
+        <button data-instance-act="place">📍 설치 모드</button>
+      </div>
+    </div>
+    <div class="instance-list">${rows || '<p class="quest-empty">아직 제작된 인스턴스가 없습니다. 제작 버튼으로 라벨/소유자/첨부를 가진 개체를 만드세요.</p>'}</div>
+  `;
+}
+
+function renderAttachmentList(files, kind) {
+  if (!files?.length) return '';
+  return `<div class="attachment-list">${files.map(file => `
+    <a href="${file.dataUrl}" download="${file.name}" title="${file.type || ''}">📎 ${file.name}</a>
+    <button data-instance-act="del-${kind}" data-attachment-id="${file.id}" title="첨부 삭제">✕</button>
+  `).join('')}</div>`;
+}
+
+function renderImageList(images) {
+  if (!images?.length) return '';
+  return `<div class="image-list">${images.map(file => `
+    <figure><img src="${file.dataUrl}" alt="${file.name}" /><figcaption>${file.name} <button data-instance-act="del-image" data-attachment-id="${file.id}">✕</button></figcaption></figure>
+  `).join('')}</div>`;
 }
 
 /* ---------- toast ---------- */
@@ -2002,6 +2231,17 @@ function renderAdminQuests() {
         </label>
       </div>
       <div class="aq-rewards">
+        <span class="dim">재료</span>
+        ${(q.materials || []).map((mt, idx) => `
+          <span class="reward-row" data-material-index="${idx}">
+            <select data-field="material-item">${itemOptions(mt.item)}</select>
+            <input type="number" class="num-input" data-field="material-count" value="${mt.count}" min="1" max="99" />
+            <button data-act="del-material" title="재료 제거">✕</button>
+          </span>
+        `).join('')}
+        <button data-act="add-material">＋ 재료</button>
+      </div>
+      <div class="aq-rewards">
         <span class="dim">보상</span>
         ${(q.rewards || []).map((rw, idx) => `
           <span class="reward-row" data-reward-index="${idx}">
@@ -2015,7 +2255,7 @@ function renderAdminQuests() {
     </div>
   `).join('');
   return `
-    <p class="admin-help">퀘스트를 정의합니다. 해금 레벨과 선행 퀘스트(완료되어야 등장)로 발생 조건을 제어하고, 완료 시 보상 아이템이 인벤토리에 지급됩니다.</p>
+    <p class="admin-help">퀘스트를 정의합니다. 재료는 퀘스트 시작 시 1회 지급되고, 보상은 완료 시 지급됩니다.</p>
     ${blocks}
     <button class="admin-add" data-act="add-quest">＋ 새 퀘스트 추가</button>
   `;
@@ -2091,8 +2331,14 @@ function onAdminInput(event) {
   if (questBlock) {
     const quest = questById(questBlock.dataset.questId);
     if (!quest) return;
+    const materialRow = event.target.closest('[data-material-index]');
     const rewardRow = event.target.closest('[data-reward-index]');
-    if (rewardRow) {
+    if (materialRow) {
+      const material = quest.materials[Number.parseInt(materialRow.dataset.materialIndex, 10)];
+      if (!material) return;
+      if (field === 'material-item') material.item = value;
+      else if (field === 'material-count') material.count = Math.max(1, Number.parseInt(value, 10) || 1);
+    } else if (rewardRow) {
       const reward = quest.rewards[Number.parseInt(rewardRow.dataset.rewardIndex, 10)];
       if (!reward) return;
       if (field === 'reward-item') reward.item = value;
@@ -2102,7 +2348,7 @@ function onAdminInput(event) {
     else if (field === 'method') quest.method = value;
     else if (field === 'unlockLevel') quest.unlockLevel = Number.parseInt(value, 10) || 0;
     else if (field === 'prereq') quest.prereq = value || null;
-    else if (field === 'status') { quest.status = value; clearPendingComplete(); }
+    else if (field === 'status') { quest.status = value; if (value === 'todo') quest.materialsGranted = false; clearPendingComplete(); }
     saveGameState();
     renderQuestBoard();
     return;
@@ -2162,7 +2408,7 @@ function onAdminClick(event) {
     return;
   }
   if (act === 'add-quest') {
-    gameState.quests.push({ id: makeId('q'), title: '새 퀘스트', desc: '', method: '', unlockLevel: 0, prereq: null, rewards: [], status: 'todo', assignee: '' });
+    gameState.quests.push({ id: makeId('q'), title: '새 퀘스트', desc: '', method: '', unlockLevel: 0, prereq: null, materials: [], rewards: [], materialsGranted: false, status: 'todo', assignee: '' });
     saveGameState();
     renderAdmin();
     renderQuestBoard();
@@ -2212,7 +2458,11 @@ function onAdminClick(event) {
       placedObjects = placedObjects.filter(obj => obj.type !== key);
       delete gameState.items[key];
       delete gameState.inventory[key];
-      for (const quest of gameState.quests) quest.rewards = (quest.rewards || []).filter(rw => rw.item !== key);
+      gameState.instances = gameState.instances.filter(inst => inst.type !== key);
+      for (const quest of gameState.quests) {
+        quest.materials = (quest.materials || []).filter(mt => mt.item !== key);
+        quest.rewards = (quest.rewards || []).filter(rw => rw.item !== key);
+      }
       for (const lvl of Object.keys(gameState.levelRequirements)) {
         gameState.levelRequirements[lvl] = gameState.levelRequirements[lvl].filter(rq => rq.item !== key);
       }
@@ -2232,6 +2482,24 @@ function onAdminClick(event) {
   if (questBlock) {
     const quest = questById(questBlock.dataset.questId);
     if (!quest) return;
+    if (act === 'add-material') {
+      const firstItem = Object.keys(gameState.items)[0];
+      if (!firstItem) { showToast('먼저 아이템을 정의하세요'); return; }
+      quest.materials.push({ item: firstItem, count: 1 });
+      quest.materialsGranted = quest.status !== 'todo' ? quest.materialsGranted : false;
+      saveGameState();
+      renderAdmin();
+      renderQuestBoard();
+      return;
+    }
+    if (act === 'del-material') {
+      const idx = Number.parseInt(event.target.closest('[data-material-index]').dataset.materialIndex, 10);
+      quest.materials.splice(idx, 1);
+      saveGameState();
+      renderAdmin();
+      renderQuestBoard();
+      return;
+    }
     if (act === 'add-reward') {
       const firstItem = Object.keys(gameState.items)[0];
       if (!firstItem) { showToast('먼저 아이템을 정의하세요'); return; }
