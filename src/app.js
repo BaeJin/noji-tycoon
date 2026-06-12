@@ -1102,51 +1102,8 @@ function applyBrush(center) {
 
 /* ---------- placed objects: editing ---------- */
 
-function handlePlaceClick(tile) {
-  const hit = objectAt(tile.q, tile.r);
-  if (hit) {
-    placedObjects = placedObjects.filter(obj => obj.id !== hit.id);
-    addInventory(hit.type, 1);
-    placeType = hit.type;
-    pendingPlaceInstanceId = hit.instanceId || null;
-    placeRotation = hit.rot;
-    renderObjectsLayer();
-    renderEditorContext();
-    renderInventory();
-    saveMapToStorage();
-    renderInlineEditorStats(`${itemMeta(hit.type)?.label || ''} 집음 — 클릭해서 다시 설치`);
-    updateGhost(tile);
-    return;
-  }
-  if (inventoryOf(placeType) <= 0) {
-    showToast(`📦 ${itemMeta(placeType)?.label || ''} 보유 없음 — 퀘스트 보상으로 획득하세요`);
-    return;
-  }
-  const selectedInstance = instanceById(pendingPlaceInstanceId);
-  if (!selectedInstance || selectedInstance.type !== placeType || selectedInstance.status !== 'owned') {
-    showPlaceInstancePicker(placeType);
-    showToast('설치할 인스턴스를 먼저 선택하세요');
-    return;
-  }
-  if (!availableInstancesForPlacement(placeType).some(inst => inst.id === selectedInstance.id)) {
-    pendingPlaceInstanceId = null;
-    showPlaceInstancePicker(placeType);
-    showToast('이미 배치된 인스턴스입니다. 다른 인스턴스를 선택하세요');
-    return;
-  }
-  const anchor = placeAnchorFor(tile, placeType, placeRotation);
-  const candidate = { id: makeId('obj'), type: placeType, q: anchor.q, r: anchor.r, rot: placeRotation, instanceId: selectedInstance.id };
-  if (!canPlaceObject(candidate)) return;
-  placedObjects.push(candidate);
-  addInventory(placeType, -1);
-  pendingPlaceInstanceId = null;
-  renderObjectsLayer();
-  renderEditorContext();
-  renderInventory();
-  saveMapToStorage();
-  renderInlineEditorStats();
-  hideInstancePicker();
-  updateGhost(tile);
+function handlePlaceClick() {
+  showToast('맵 편집 모드에서 설치는 제거되었습니다');
 }
 
 function hideInstancePicker() {
@@ -1176,39 +1133,6 @@ function showInstancePicker(objectId) {
       </div>
     ` : '<p>선택 가능한 보유완료 인스턴스가 없습니다. 인스턴스를 완료한 뒤 다시 설치하세요.</p>'}
   `;
-}
-
-function showPlaceInstancePicker(type) {
-  const picker = mapDom.instancePicker;
-  if (!picker) return;
-  const item = itemMeta(type);
-  const instances = availableInstancesForPlacement(type);
-  picker.hidden = false;
-  picker.dataset.objectId = '';
-  picker.dataset.placeType = type;
-  picker.innerHTML = `
-    <div class="instance-picker-head">
-      <strong>${item?.icon || '📦'} ${item?.label || type} 설치 인스턴스 선택</strong>
-      <button data-picker-act="close" title="닫기">✕</button>
-    </div>
-    ${instances.length ? `
-      <div class="instance-picker-list">
-        ${instances.map(inst => `<button data-picker-place-instance="${inst.id}" class="${pendingPlaceInstanceId === inst.id ? 'active' : ''}"><b>${inst.label}</b>${inst.owner ? `<span>${inst.owner}</span>` : ''}</button>`).join('')}
-      </div>
-    ` : '<p>설치 가능한 보유완료 인스턴스가 없습니다. 인스턴스를 완료한 뒤 선택하세요.</p>'}
-  `;
-}
-
-function selectInstanceForPlacement(instanceId) {
-  const inst = instanceById(instanceId);
-  if (!inst || inst.status !== 'owned') return;
-  if (!availableInstancesForPlacement(inst.type).some(candidate => candidate.id === inst.id)) return;
-  placeType = inst.type;
-  pendingPlaceInstanceId = inst.id;
-  hideInstancePicker();
-  renderEditorContext();
-  if (lastHoverTile) updateGhost(lastHoverTile);
-  showToast(`📦 ${inst.label} 선택됨 — 맵을 클릭해 설치하세요`);
 }
 
 function selectInstanceForObject(objectId, instanceId) {
@@ -1630,17 +1554,6 @@ function setupInventory() {
       showToast(`✏️ ${inst.label} 제작 상태로 전환`);
       return;
     }
-    if (act === 'place-instance') {
-      if (inst.status !== 'owned') {
-        showToast('제작 완료된 인스턴스만 설치할 수 있습니다');
-        return;
-      }
-      if (!editorEnabled) setEditorEnabled(true);
-      setEditorTool('place');
-      selectInstanceForPlacement(inst.id);
-      document.querySelector('#map-frame-wrap')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      return;
-    }
     if (act === 'delete') {
       if (!armDanger(actBtn)) return;
       if (inst.status === 'owned' && inventoryOf(inst.type) > 0) addInventory(inst.type, -1);
@@ -1770,7 +1683,7 @@ function renderInstancePanel() {
       <div class="instance-head">
         <strong>${item.icon || '📦'} ${item.label} <em>${owned ? '보유완료' : '제작중'}</em></strong>
         <div class="instance-card-actions">
-          ${owned ? `<button data-instance-act="edit">수정</button><button data-instance-act="place-instance">설치</button>` : `<button data-instance-act="complete">완료</button>`}
+          ${owned ? `<button data-instance-act="edit">수정</button>` : `<button data-instance-act="complete">완료</button>`}
           <button class="danger" data-instance-act="delete">삭제</button>
         </div>
       </div>
@@ -2067,42 +1980,9 @@ function setEditorTool(tool) {
 function renderEditorContext() {
   const panel = mapDom.editorContext;
   if (!panel) return;
-  if (!editorEnabled || !['paint', 'erase', 'terrain', 'place'].includes(editorTool)) {
+  if (!editorEnabled || !['paint', 'erase', 'terrain'].includes(editorTool)) {
     panel.hidden = true;
     panel.innerHTML = '';
-    return;
-  }
-  if (editorTool === 'place') {
-    if (!itemMeta(placeType)) placeType = Object.keys(gameState.items)[0] || '';
-    const { w, h } = footprintOf(placeType, placeRotation);
-    const selectedInst = instanceById(pendingPlaceInstanceId);
-    panel.innerHTML = `
-      <div class="context-section">
-        <h4>오브젝트</h4>
-        <div class="object-palette">
-          ${Object.entries(gameState.items).map(([key, meta]) => {
-            const locked = !isItemUnlocked(key);
-            const stock = inventoryOf(key);
-            return `
-            <button class="object-card ${placeType === key ? 'active' : ''} ${locked ? 'locked' : ''} ${!locked && stock === 0 ? 'empty' : ''}"
-              data-place-type="${key}" ${locked ? 'data-locked="1"' : ''}
-              title="${locked ? `Lv.${meta.unlockLevel}에 해금` : `${meta.label} ${meta.w}×${meta.h}m · 클릭해 인스턴스 선택`}">
-              <span>${locked ? '🔒' : meta.icon}</span><small>${meta.label}</small><i>${locked ? `Lv.${meta.unlockLevel}` : `보유 ${stock}`}</i>
-            </button>
-          `;
-          }).join('')}
-        </div>
-      </div>
-      <div class="context-section">
-        <h4>방향</h4>
-        <div class="rotate-row">
-          <button data-rotate title="90° 회전 (R)">↻ 회전</button>
-          <span>${placeRotation}° · ${w}×${h}m</span>
-        </div>
-        <p class="zone-name">${selectedInst?.type === placeType ? `선택: ${selectedInst.label}` : '아이템 클릭 → 인스턴스 선택 → 맵 클릭'}</p>
-      </div>
-    `;
-    panel.hidden = false;
     return;
   }
   const zoneMeta = getZoneMeta();
@@ -2192,23 +2072,6 @@ function setupInlineEditor() {
       renderEditorContext();
       return;
     }
-    const placeCard = event.target.closest('[data-place-type]');
-    if (placeCard) {
-      if (placeCard.dataset.locked) {
-        showToast(`🔒 ${itemMeta(placeCard.dataset.placeType)?.label || ''}은(는) 마을 Lv.${gameState.items[placeCard.dataset.placeType]?.unlockLevel}에 해금됩니다`);
-        return;
-      }
-      placeType = placeCard.dataset.placeType;
-      pendingPlaceInstanceId = null;
-      showPlaceInstancePicker(placeType);
-      renderEditorContext();
-      if (lastHoverTile) updateGhost(lastHoverTile);
-      return;
-    }
-    if (event.target.closest('[data-rotate]')) {
-      rotatePlaceObject();
-      return;
-    }
     const mode = event.target.closest('[data-terrain-mode]');
     if (mode) {
       terrainMode = mode.dataset.terrainMode;
@@ -2232,11 +2095,6 @@ function setupInlineEditor() {
   mapDom.instancePicker?.addEventListener('click', event => {
     const close = event.target.closest('[data-picker-act="close"]');
     if (close) { hideInstancePicker(); return; }
-    const placeButton = event.target.closest('[data-picker-place-instance]');
-    if (placeButton) {
-      selectInstanceForPlacement(placeButton.dataset.pickerPlaceInstance);
-      return;
-    }
     const button = event.target.closest('[data-picker-instance]');
     if (!button) return;
     selectInstanceForObject(mapDom.instancePicker.dataset.objectId, button.dataset.pickerInstance);
@@ -2267,11 +2125,7 @@ function setupInlineEditor() {
     }
     if (!editorEnabled) return;
     const key = event.key.toLowerCase();
-    if (key === 'r' && editorTool === 'place') {
-      rotatePlaceObject();
-      return;
-    }
-    const toolByKey = { v: 'inspect', b: 'paint', m: 'measure', t: 'terrain', o: 'place' };
+    const toolByKey = { v: 'inspect', b: 'paint', m: 'measure', t: 'terrain' };
     if (toolByKey[key]) {
       closeEditorSettings();
       setEditorTool(toolByKey[key]);
