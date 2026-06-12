@@ -85,7 +85,7 @@ let projectData;
 let gameState = null;
 let defaultMapPayload = null;
 let currentTheme = localStorage.getItem('noji-theme') || 'forest';
-let editorEnabled = false;
+let editorEnabled = true;
 let editorTool = 'inspect';
 let paintZone = 'wild';
 let brushSize = 1;
@@ -564,6 +564,10 @@ function fillFor(zone, q, r, h = 0) {
 function render(data) {
   initTileState();
   buildMapDom();
+  editorEnabled = true;
+  editorTool = 'inspect';
+  document.body.classList.add('editor-mode');
+  document.querySelectorAll('[data-editor-tool]').forEach(b => b.classList.toggle('active', b.dataset.editorTool === editorTool));
   if (!mapZoom || Number.isNaN(mapZoom)) fitView();
   renderGame();
   renderCurrentPlayer();
@@ -1212,9 +1216,15 @@ function updateLegend() {
   tileState.forEach(tile => { counts[tile.zone] = (counts[tile.zone] || 0) + 1; });
   legend.innerHTML = Object.entries(zoneMeta).filter(([key]) => counts[key]).map(([key, meta]) => `
     <button class="legend-chip ${focusZone === key ? 'active' : ''}" data-zone="${key}" title="클릭하면 이 구역만 강조">
-      <i style="background:${meta.color}"></i>${meta.icon} ${meta.label} <b>${counts[key]}</b>
+      <i style="background:${meta.color}"></i>${meta.icon} ${meta.label} <b>${zoneAreaText(counts[key])}</b>
     </button>
   `).join('');
+}
+
+function zoneAreaText(count) {
+  const sqm = count * SQM_PER_TILE;
+  const pyeong = sqm / PYEONG_SQM;
+  return `${sqm.toFixed(0)}m2 / ${pyeong.toFixed(1)}평`;
 }
 
 /* ---------- HUD / panels ---------- */
@@ -1230,33 +1240,7 @@ function renderResourceBar(resources) {
 function renderInlineEditorStats(extra = '') {
   const el = document.querySelector('#inline-editor-stats');
   if (!el) return;
-  const counts = {};
-  tileState.forEach(tile => { counts[tile.zone] = (counts[tile.zone] || 0) + 1; });
-  const zoneMeta = getZoneMeta();
-  const total = tileState.size;
-  const totalSqm = total * SQM_PER_TILE;
-  const totalPyeong = totalSqm / PYEONG_SQM;
-  const deltaSqm = totalSqm - TARGET_LAND_SQM;
-  const landFitText = Math.abs(deltaSqm) < 0.5 ? 'target 550평 exact' : `${Math.abs(deltaSqm).toFixed(0)}㎡ ${deltaSqm > 0 ? '여유' : '부족'}`;
-  const measureText = measurePoints.length === 2 ? ` · 측정 ${distanceMeters(measurePoints[0], measurePoints[1]).toFixed(2)}m` : '';
-  let hMin = Infinity;
-  let hMax = -Infinity;
-  tileState.forEach(tile => {
-    const h = tileH(tile);
-    if (h < hMin) hMin = h;
-    if (h > hMax) hMax = h;
-  });
-  const terrainText = hMin !== hMax || hMin !== 0 ? `<span>⛰ 고도 ${hMin}m ~ ${hMax}m · 등고선 ${CONTOUR_MAJOR_STEP}m 굵게</span>` : '';
-  const objectText = placedObjects.length ? `<span>📦 오브젝트 ${placedObjects.length}개</span>` : '';
-  el.innerHTML = `
-    <span>맵 ${mapSettings.width}m×${mapSettings.height}m = ${totalSqm.toFixed(0)}㎡ / ${totalPyeong.toFixed(1)}평</span>
-    <span>실토지 약 ${TARGET_LAND_PYEONG}평(${TARGET_LAND_SQM.toFixed(0)}㎡) 기준 ${landFitText}</span>
-    <span>tile 1m×1m${measureText}</span>
-    ${terrainText}
-    ${objectText}
-    <span>${Object.entries(counts).map(([zone, count]) => `${zoneMeta[zone]?.icon || ''} ${zone}: ${count}`).join(' · ')}</span>
-    ${extra ? `<span class="good">${extra}</span>` : ''}
-  `;
+  el.remove();
 }
 
 /* ---------- village panel (level + upgrade) ---------- */
@@ -1269,9 +1253,9 @@ function renderVillagePanel() {
   const level = gameState.village.level;
   const meta = levelMetaOf(level);
   const next = levelMetaOf(level + 1);
-  document.querySelector('#land-name').textContent = projectData.land.name;
+  document.querySelector('#land-name').textContent = 'Hachunri 179-2';
   document.querySelector('#land-level').textContent = `Lv.${level} ${meta?.name || ''}`;
-  document.querySelector('#land-summary').textContent = `${projectData.land.address} · ${projectData.land.areaPyeongApprox}평`;
+  document.querySelector('#land-summary').textContent = projectData.land.address;
   document.querySelector('#level-fill').style.width = `${Math.min(100, (level / maxVillageLevel()) * 100)}%`;
 
   const box = document.querySelector('#upgrade-box');
@@ -1922,12 +1906,12 @@ function setEditorEnabled(next) {
   updateGhost(null);
   document.body.classList.toggle('editor-mode', editorEnabled);
   const toggle = document.querySelector('#toggle-map-editor');
-  toggle.textContent = editorEnabled ? '✕ Close Editor' : '🛠 Map Editor';
+  if (toggle) toggle.textContent = editorEnabled ? '✕ Close Editor' : '🛠 Map Editor';
   if (!editorEnabled) closeEditorSettings();
   clearSelection();
   renderEditorContext();
-  renderInlineEditorStats();
 }
+
 
 function setEditorTool(tool) {
   editorTool = tool;
@@ -2044,9 +2028,10 @@ function closeEditorSettings() {
 
 function setupInlineEditor() {
   const toggle = document.querySelector('#toggle-map-editor');
-  if (!toggle || toggle.dataset.bound) return;
-  toggle.dataset.bound = 'true';
-  toggle.addEventListener('click', () => setEditorEnabled(!editorEnabled));
+  if (toggle && !toggle.dataset.bound) {
+    toggle.dataset.bound = 'true';
+    toggle.addEventListener('click', () => setEditorEnabled(!editorEnabled));
+  }
 
   document.querySelectorAll('[data-editor-tool]').forEach(button => {
     button.addEventListener('click', () => {

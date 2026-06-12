@@ -1294,3 +1294,20 @@ body.modal-open { overflow: hidden; }
   .quest-area, .inventory-area, .instance-area { overflow:visible; }
 }
 .instance-fields select { border:1px solid var(--line); border-radius:9px; background:rgba(0,0,0,.26); color:var(--text); padding:7px 9px; font:inherit; }
+
+/* ---------- title/font cleanup ---------- */
+.map-title strong,
+.land-card .label,
+.level-details summary,
+.panel-title h3 {
+  font-family: Orbitron, sans-serif;
+}
+.map-title strong {
+  font-size: 16px;
+  line-height: 1.2;
+  letter-spacing: 0;
+}
+.land-card h2 { margin-bottom: 6px; }
+#land-summary { margin-bottom: 12px; }
+.legend-chip b { font-size: 11px; }
+.inline-editor-stats { display: none !important; }
