@@ -1224,7 +1224,7 @@ function renderPlacementHud() {
   hud.innerHTML = `
     <div class="instance-picker-head">
       <strong>${item?.icon || '📦'} ${item?.label || inst.type}</strong>
-      <button data-placement-act="cancel" title="취소 (D)">✕</button>
+      <button data-placement-act="cancel" title="철거 (D)">✕</button>
     </div>
     <div class="placement-hud-body">
       <b>${inst.label}</b>
@@ -1233,7 +1233,7 @@ function renderPlacementHud() {
     </div>
     <div class="placement-hud-actions">
       <button data-placement-act="rotate">↻ 회전</button>
-      <button data-placement-act="cancel">취소</button>
+      <button data-placement-act="cancel">철거</button>
     </div>
   `;
 }
