@@ -31,14 +31,24 @@ const seedZones = {
 };
 
 const seedItems = {
-  tent: { label: '텐트', icon: '⛺', w: 10, h: 5, unlockLevel: 0, tint: '#3e8f66' },
-  vehicle: { label: '차량', icon: '🚙', w: 5, h: 2, unlockLevel: 0, tint: '#7890a8' },
-  toilet: { label: '간이화장실', icon: '🚻', w: 2, h: 2, unlockLevel: 0, tint: '#9b8456' },
-  firepit: { label: '화로대', icon: '🔥', w: 1, h: 1, unlockLevel: 0, tint: '#d65345' },
-  brushCutter: { label: '제초기', icon: '🌿', w: 1, h: 1, unlockLevel: 0, tint: '#5fa84f' },
-  burner: { label: '버너', icon: '🔥', w: 1, h: 1, unlockLevel: 0, tint: '#d97745' },
-  griddle: { label: '그리들', icon: '🍳', w: 1, h: 1, unlockLevel: 0, tint: '#8b8f98' }
+  tent: { label: '텐트', icon: '⛺', category: 'fixed', w: 10, h: 5, unlockLevel: 0, tint: '#3e8f66' },
+  vehicle: { label: '차량', icon: '🚙', category: 'mobile', w: 5, h: 2, unlockLevel: 0, tint: '#7890a8' },
+  toilet: { label: '간이화장실', icon: '🚻', category: 'fixed', w: 2, h: 2, unlockLevel: 0, tint: '#9b8456' },
+  firepit: { label: '화로대', icon: '🔥', category: 'fixed', w: 1, h: 1, unlockLevel: 0, tint: '#d65345' },
+  brushCutter: { label: '제초기', icon: '🌿', category: 'tool', w: 1, h: 1, unlockLevel: 0, tint: '#5fa84f' },
+  burner: { label: '버너', icon: '🔥', category: 'tool', w: 1, h: 1, unlockLevel: 0, tint: '#d97745' },
+  griddle: { label: '그리들', icon: '🍳', category: 'tool', w: 1, h: 1, unlockLevel: 0, tint: '#8b8f98' },
+  landRegistry: { label: '토지등기부등본', icon: '📄', category: 'document', w: 1, h: 1, unlockLevel: 0, tint: '#b9c1c8' },
+  landUsePlan: { label: '토지이용계획', icon: '🗺️', category: 'document', w: 1, h: 1, unlockLevel: 0, tint: '#9fb3c8' }
 };
+
+const ITEM_CATEGORIES = {
+  fixed: { label: '고정 시설', badge: '고정', canMapPlace: true, canEquipIntoFacility: false, usesSize: true },
+  mobile: { label: '이동 시설', badge: '이동', canMapPlace: true, canEquipIntoFacility: false, usesSize: true },
+  tool: { label: '도구', badge: '도구', canMapPlace: false, canEquipIntoFacility: true, usesSize: false },
+  document: { label: '문서', badge: '문서', canMapPlace: false, canEquipIntoFacility: false, usesSize: false }
+};
+const ITEM_CATEGORY_KEYS = Object.keys(ITEM_CATEGORIES);
 
 const ITEM_TINTS = ['#3e8f66', '#7890a8', '#9b8456', '#d65345', '#6d8c3f', '#b28b45', '#5a7da8', '#a85a8f'];
 const OBJECT_ROTATIONS = [0, 90, 180, 270];
@@ -207,6 +217,7 @@ function normalizeGameState(raw) {
     state.items[key] = {
       label: String(it.label || key),
       icon: String(it.icon || '📦'),
+      category: ITEM_CATEGORY_KEYS.includes(it.category) ? it.category : seedItems[key]?.category || 'fixed',
       w: Math.max(1, Math.min(40, Number.parseInt(it.w, 10) || 1)),
       h: Math.max(1, Math.min(40, Number.parseInt(it.h, 10) || 1)),
       unlockLevel: Math.max(0, Math.min(maxVillageLevel(), Number.parseInt(it.unlockLevel, 10) || 0)),
@@ -334,6 +345,36 @@ function itemTint(type) {
   return ITEM_TINTS[hash % ITEM_TINTS.length];
 }
 
+function itemCategoryOf(type) {
+  const meta = itemMeta(type);
+  if (!meta) return null;
+  return ITEM_CATEGORIES[meta.category] ? meta.category : 'fixed';
+}
+
+function itemCategoryMeta(type) {
+  return ITEM_CATEGORIES[itemCategoryOf(type)] || ITEM_CATEGORIES.document;
+}
+
+function itemCategoryLabel(type) {
+  return itemCategoryMeta(type).label;
+}
+
+function itemUsesSize(type) {
+  return itemCategoryMeta(type).usesSize;
+}
+
+function canMapPlaceItem(type) {
+  return itemCategoryMeta(type).canMapPlace;
+}
+
+function canEquipItemIntoFacility(type) {
+  return itemCategoryMeta(type).canEquipIntoFacility;
+}
+
+function canReceiveEquipment(type) {
+  return Boolean(itemMeta(type)) && ['fixed', 'mobile'].includes(itemCategoryOf(type));
+}
+
 function inventoryOf(type) { return gameState.inventory[type] || 0; }
 function placedCountOf(type) { return placedObjects.filter(obj => obj.type === type).length; }
 function ownedOf(type) { return inventoryOf(type) + placedCountOf(type); }
@@ -375,7 +416,12 @@ function syncPlacedInstanceStatuses() {
       inst.equippedTo = '';
       inst.updatedAt = new Date().toISOString();
       changed = true;
-    } else if (inst.status === 'equipped' && !instanceById(inst.equippedTo)) {
+    } else if (inst.status === 'placed' && !placedIds.has(inst.id)) {
+      inst.status = 'owned';
+      inst.equippedTo = '';
+      inst.updatedAt = new Date().toISOString();
+      changed = true;
+    } else if (inst.status === 'equipped' && (!canEquipItemIntoFacility(inst.type) || !canReceiveEquipment(instanceById(inst.equippedTo)?.type))) {
       inst.status = 'owned';
       inst.equippedTo = '';
       inst.updatedAt = new Date().toISOString();
@@ -807,9 +853,19 @@ function updateGhost(tile) {
   }
   const selectedInstance = instanceById(pendingPlaceInstanceId);
   placeType = selectedInstance.type;
+  const hit = objectAt(tile.q, tile.r);
+  if (!canMapPlaceItem(placeType)) {
+    if (hit && canEquipItemIntoFacility(placeType) && canReceiveEquipment(hit.type)) {
+      const { x, y } = tileRectPx(hit.q, hit.r);
+      const { w, h } = footprintOf(hit.type, hit.rot);
+      layer.innerHTML = `<rect class="object-ghost valid" x="${x}" y="${y}" width="${w * SQUARE_SIZE_PX}" height="${h * SQUARE_SIZE_PX}" rx="${SQUARE_SIZE_PX * 0.3}" />`;
+    } else {
+      layer.innerHTML = '';
+    }
+    return;
+  }
   const anchor = placeAnchorFor(tile, placeType, placeRotation);
   const candidate = { type: placeType, q: anchor.q, r: anchor.r, rot: placeRotation };
-  const hit = objectAt(tile.q, tile.r);
   const validInstance = availableInstancesForPlacement(placeType).some(inst => inst.id === selectedInstance.id);
   const valid = !hit && canPlaceObject(candidate) && inventoryOf(placeType) > 0 && validInstance;
   const { w, h } = footprintOf(placeType, placeRotation);
@@ -1114,10 +1170,16 @@ function onTileHover(event) {
   if (isPlacementActive()) {
     const placeMeta = itemMeta(placeType);
     const inst = instanceById(pendingPlaceInstanceId);
-    const { w, h } = footprintOf(placeType, placeRotation);
-    hint = objectHere
-      ? `<em>📦 ${itemMeta(objectHere.type)?.icon || ''} ${itemMeta(objectHere.type)?.label || ''} — 클릭해서 재설치</em>`
-      : `<em>📦 ${placeMeta?.icon || ''} ${inst?.label || ''} ${w}×${h}m · R 회전 · D 취소</em>`;
+    if (canEquipItemIntoFacility(placeType)) {
+      hint = objectHere
+        ? `<em>🧰 ${placeMeta?.icon || ''} ${inst?.label || ''} — 이 시설에 장착</em>`
+        : `<em>🧰 ${placeMeta?.icon || ''} ${inst?.label || ''} — 시설을 클릭해 장착</em>`;
+    } else {
+      const { w, h } = footprintOf(placeType, placeRotation);
+      hint = objectHere
+        ? `<em>📦 ${itemMeta(objectHere.type)?.icon || ''} ${itemMeta(objectHere.type)?.label || ''} — 여기는 설치 불가</em>`
+        : `<em>📦 ${placeMeta?.icon || ''} ${inst?.label || ''} ${w}×${h}m · R 회전 · D 철거</em>`;
+    }
   } else if (editorEnabled && editorTool === 'place') {
     const placeMeta = itemMeta(placeType);
     const { w, h } = footprintOf(placeType, placeRotation);
@@ -1254,6 +1316,14 @@ function handlePlaceClick(tile) {
 function equipPendingInstanceToObject(targetObj) {
   const child = instanceById(pendingPlaceInstanceId);
   const parent = instanceById(targetObj.instanceId);
+  if (!canEquipItemIntoFacility(child?.type)) {
+    showToast('도구만 시설 안에 장착할 수 있습니다');
+    return;
+  }
+  if (!canReceiveEquipment(targetObj.type)) {
+    showToast('고정 시설 또는 이동 시설에만 장착할 수 있습니다');
+    return;
+  }
   if (!child || child.status !== 'owned' || !parent || child.id === parent.id) {
     showToast('장착할 수 없는 대상입니다');
     return;
@@ -1283,6 +1353,10 @@ function placePendingInstanceAtTile(tile) {
     return;
   }
   placeType = selectedInstance.type;
+  if (!canMapPlaceItem(placeType)) {
+    showToast(canEquipItemIntoFacility(placeType) ? '도구는 맵 빈칸에 설치할 수 없습니다. 시설을 클릭해 장착하세요' : '문서는 설치할 수 없습니다');
+    return;
+  }
   if (inventoryOf(placeType) <= 0) {
     showToast(`📦 ${itemMeta(placeType)?.label || ''} 보유 없음`);
     return;
@@ -1391,20 +1465,21 @@ function renderPlacementHud() {
   if (!inst || inst.status !== 'owned') { hideInstancePicker(); return; }
   const item = itemMeta(inst.type);
   const { w, h } = footprintOf(inst.type, placeRotation);
+  const isTool = canEquipItemIntoFacility(inst.type);
   hud.hidden = false;
   hud.dataset.mode = 'placement';
   hud.innerHTML = `
     <div class="instance-picker-head">
-      <strong>${item?.icon || '📦'} ${item?.label || inst.type}</strong>
+      <strong>${item?.icon || '📦'} ${item?.label || inst.type} · ${itemCategoryLabel(inst.type)}</strong>
       <button data-placement-act="demolish" title="철거 (D)">✕</button>
     </div>
     <div class="placement-hud-body">
       <b>${inst.label}</b>
       ${inst.owner ? `<span>${inst.owner}</span>` : ''}
-      <small>${w}×${h}m · ${placeRotation}°</small>
+      <small>${isTool ? '시설을 클릭해 장착' : `${w}×${h}m · ${placeRotation}°`}</small>
     </div>
     <div class="placement-hud-actions">
-      <button data-placement-act="rotate">↻ 회전</button>
+      ${isTool ? '' : '<button data-placement-act="rotate">↻ 회전</button>'}
       <button data-placement-act="demolish">철거</button>
     </div>
   `;
@@ -1417,6 +1492,10 @@ function startInstancePlacement(instanceId) {
     showToast('제작 완료된 인스턴스만 설치할 수 있습니다');
     return;
   }
+  if (!canMapPlaceItem(inst.type) && !canEquipItemIntoFacility(inst.type)) {
+    showToast('문서는 설치할 수 없습니다');
+    return;
+  }
   if (!availableInstancesForPlacement(inst.type).some(candidate => candidate.id === inst.id)) {
     showToast('이미 맵에 배치된 인스턴스입니다');
     return;
@@ -1426,7 +1505,7 @@ function startInstancePlacement(instanceId) {
   renderPlacementHud();
   if (lastHoverTile) updateGhost(lastHoverTile);
   document.querySelector('#map-frame-wrap')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  showToast(`📦 ${inst.label} 설치 모드 — 맵을 클릭하세요`);
+  showToast(canEquipItemIntoFacility(inst.type) ? `🧰 ${inst.label} 장착 모드 — 시설을 클릭하세요` : `📦 ${inst.label} 설치 모드 — 맵을 클릭하세요`);
 }
 
 function demolishPlacedInstance(instanceId) {
@@ -1504,6 +1583,7 @@ function removeObject(id, { refund = true } = {}) {
 }
 
 function rotatePlaceObject() {
+  if (!canMapPlaceItem(placeType)) return;
   placeRotation = OBJECT_ROTATIONS[(OBJECT_ROTATIONS.indexOf(placeRotation) + 1) % OBJECT_ROTATIONS.length];
   renderEditorContext();
   if (lastHoverTile) updateGhost(lastHoverTile);
@@ -1513,10 +1593,16 @@ function revalidatePlacedObjects() {
   const keep = [];
   let returned = 0;
   for (const obj of placedObjects) {
-    if (itemMeta(obj.type) && objectFitsBounds(obj) && !keep.some(other => objectsOverlap(obj, other))) {
+    if (itemMeta(obj.type) && canMapPlaceItem(obj.type) && objectFitsBounds(obj) && !keep.some(other => objectsOverlap(obj, other))) {
       keep.push(obj);
     } else {
       if (itemMeta(obj.type)) addInventory(obj.type, 1);
+      const inst = instanceById(obj.instanceId);
+      if (inst && inst.status === 'placed') {
+        inst.status = 'owned';
+        inst.equippedTo = '';
+        inst.updatedAt = new Date().toISOString();
+      }
       returned += 1;
     }
   }
@@ -1844,10 +1930,10 @@ function renderInventory() {
     const draftInstCount = instCount - ownedInstCount - placedInstCount - equippedInstCount;
     return `
     <button class="inv-card ${selectedInventoryItem === key ? 'selected' : ''} ${locked ? 'locked' : ''} ${!locked && stock === 0 ? 'empty' : ''}" data-inv-item="${key}"
-      title="${locked ? `Lv.${it.unlockLevel}에 해금` : `${it.label} ${it.w}×${it.h}m — 클릭하면 인스턴스 목록`}">
+      title="${locked ? `Lv.${it.unlockLevel}에 해금` : `${itemCategoryLabel(key)} · ${itemUsesSize(key) ? `${it.w}×${it.h}m · ` : ''}클릭하면 인스턴스 목록`}">
       <span class="inv-icon">${locked ? '🔒' : it.icon}</span>
       <small>${it.label}</small>
-      <i>${it.w}×${it.h}m${locked ? ` · Lv.${it.unlockLevel}` : ''}</i>
+      <i>${itemCategoryLabel(key)}${itemUsesSize(key) ? ` · ${it.w}×${it.h}m` : ''}${locked ? ` · Lv.${it.unlockLevel}` : ''}</i>
       ${!locked ? `<b class="inv-count">${stock}</b>` : ''}
       ${!locked ? `<em class="inv-made">보유 ${ownedInstCount} · 제작중 ${draftInstCount} · 설치 ${placedInstCount}${equippedInstCount ? ` · 장착 ${equippedInstCount}` : ''}</em>` : ''}
       ${!locked && placed ? `<em class="inv-placed">설치 ${placed}</em>` : ''}
@@ -2049,14 +2135,14 @@ function renderInstancePanel() {
       <div class="instance-head">
         <strong>${item.icon || '📦'} ${item.label} <em>${statusLabel}</em></strong>
         <div class="instance-card-actions">
-          ${equipped ? '' : placed ? `<button class="danger" data-instance-act="demolish-instance">철거</button>` : owned ? `<button data-instance-act="place-instance">설치</button><button data-instance-act="edit">수정</button>` : `<button data-instance-act="complete">완료</button><button class="danger" data-instance-act="delete">삭제</button>`}
+          ${equipped ? '' : placed ? `<button class="danger" data-instance-act="demolish-instance">철거</button>` : owned ? `${canMapPlaceItem(type) ? '<button data-instance-act="place-instance">설치</button>' : canEquipItemIntoFacility(type) ? '<button data-instance-act="place-instance">장착</button>' : ''}<button data-instance-act="edit">수정</button>` : `<button data-instance-act="complete">완료</button><button class="danger" data-instance-act="delete">삭제</button>`}
         </div>
       </div>
       <div class="instance-fields">
         <label>라벨 <input type="text" data-instance-field="label" value="${inst.label}" placeholder="예: 큰 텐트 A" ${locked ? 'disabled' : ''} /></label>
         <label>소유자 <select data-instance-field="owner" ${locked ? 'disabled' : ''}>${playerOptions(inst.owner)}</select></label>
       </div>
-      ${equipped ? `<p class="instance-lock-note">${parent ? `${parent.label}에 장착된 상태입니다.` : '다른 인스턴스에 장착된 상태입니다.'}</p>` : placed ? '<p class="instance-lock-note">맵에 설치된 상태입니다. 맵 오브젝트를 클릭해 집어 들면 보유 상태로 돌아갑니다.</p>' : owned ? '<p class="instance-lock-note">보유 상태입니다. 수정 버튼을 누르면 다시 제작 상태로 전환됩니다.</p>' : ''}
+      ${equipped ? `<p class="instance-lock-note">${parent ? `${parent.label}에 장착된 상태입니다.` : '다른 인스턴스에 장착된 상태입니다.'}</p>` : placed ? '<p class="instance-lock-note">맵에 설치된 상태입니다. 맵 오브젝트를 클릭해 집어 들면 보유 상태로 돌아갑니다.</p>' : owned ? `<p class="instance-lock-note">${canMapPlaceItem(type) ? '맵에 설치할 수 있습니다.' : canEquipItemIntoFacility(type) ? '시설 안에만 장착할 수 있습니다.' : '문서는 설치할 수 없습니다.'} 수정 버튼을 누르면 다시 제작 상태로 전환됩니다.</p>` : ''}
       <div class="attachment-row">
         <label class="attach-button ${locked ? 'disabled' : ''}">📎 파일 첨부<input type="file" data-attachment-input="files" multiple ${locked ? 'disabled' : ''} /></label>
         <label class="attach-button ${locked ? 'disabled' : ''}">🖼️ 이미지 첨부<input type="file" data-attachment-input="images" accept="image/*" multiple ${locked ? 'disabled' : ''} /></label>
@@ -2546,6 +2632,10 @@ function closeAdmin() {
   document.body.classList.remove('modal-open');
 }
 
+function itemCategoryOptions(selected) {
+  return ITEM_CATEGORY_KEYS.map(key => `<option value="${key}" ${key === selected ? 'selected' : ''}>${ITEM_CATEGORIES[key].label}</option>`).join('');
+}
+
 function levelOptions(selected) {
   let html = '';
   for (let lvl = 0; lvl <= maxVillageLevel(); lvl += 1) {
@@ -2635,7 +2725,8 @@ function renderAdminItems() {
     <div class="admin-row" data-item-key="${key}">
       <input type="text" class="icon-input" data-field="icon" value="${it.icon}" maxlength="4" title="아이콘 (이모지)" />
       <input type="text" class="label-input" data-field="label" value="${it.label}" placeholder="아이템 이름" />
-      <label class="dim">크기 <input type="number" class="num-input" data-field="w" value="${it.w}" min="1" max="40" /> × <input type="number" class="num-input" data-field="h" value="${it.h}" min="1" max="40" /> m</label>
+      <label class="dim">유형 <select data-field="category">${itemCategoryOptions(itemCategoryOf(key))}</select></label>
+      ${itemUsesSize(key) ? `<label class="dim">크기 <input type="number" class="num-input" data-field="w" value="${it.w}" min="1" max="40" /> × <input type="number" class="num-input" data-field="h" value="${it.h}" min="1" max="40" /> m</label>` : '<span class="dim">크기 없음</span>'}
       <label class="dim">해금 <select data-field="unlockLevel">${levelOptions(it.unlockLevel || 0)}</select></label>
       <span class="inv-stepper"><button data-act="inv-minus" title="보유 −1">−</button><b title="보유 수량">${inventoryOf(key)}</b><button data-act="inv-plus" title="보유 +1">＋</button></span>
       <span class="dim">설치 ${placed}</span>
@@ -2644,7 +2735,7 @@ function renderAdminItems() {
   `;
   }).join('');
   return `
-    <p class="admin-help">아이템의 이름·아이콘(이모지)·크기·해금 레벨을 편집합니다. 보유 수량(±)으로 인벤토리를 직접 조정할 수 있습니다. 크기를 바꾸면 배치가 불가능해진 설치물은 인벤토리로 회수됩니다.</p>
+    <p class="admin-help">아이템 유형을 나눕니다. 고정 시설/이동 시설만 맵에 설치됩니다. 도구는 시설 안에만 장착되고, 문서는 설치되지 않습니다. 도구/문서는 크기 설정을 쓰지 않습니다.</p>
     ${rows}
     <button class="admin-add" data-act="add-item">＋ 새 아이템 추가</button>
   `;
@@ -2760,6 +2851,12 @@ function onAdminInput(event) {
     if (!item) return;
     if (field === 'icon') item.icon = value;
     else if (field === 'label') item.label = value;
+    else if (field === 'category') {
+      item.category = ITEM_CATEGORY_KEYS.includes(value) ? value : 'fixed';
+      if (!itemUsesSize(itemRow.dataset.itemKey)) { item.w = 1; item.h = 1; }
+      revalidatePlacedObjects();
+      syncPlacedInstanceStatuses();
+    }
     else if (field === 'w' || field === 'h') {
       item[field] = Math.max(1, Math.min(40, Number.parseInt(value, 10) || 1));
       revalidatePlacedObjects();
@@ -2858,7 +2955,7 @@ function onAdminClick(event) {
   }
   if (act === 'add-item') {
     const key = makeId('item');
-    gameState.items[key] = { label: '새 아이템', icon: '📦', w: 1, h: 1, unlockLevel: 0, tint: null };
+    gameState.items[key] = { label: '새 아이템', icon: '📦', category: 'fixed', w: 1, h: 1, unlockLevel: 0, tint: null };
     saveGameState();
     renderAdmin();
     renderGame();
@@ -3097,7 +3194,7 @@ function applyMapPayload(payload) {
     if (Number.isFinite(tile.h)) target.h = clampTerrain(tile.h);
   }
   placedObjects = (Array.isArray(payload.objects) ? payload.objects : [])
-    .filter(obj => gameState.items[obj.type] && Number.isInteger(obj.q) && Number.isInteger(obj.r))
+    .filter(obj => gameState.items[obj.type] && canMapPlaceItem(obj.type) && Number.isInteger(obj.q) && Number.isInteger(obj.r))
     .map(obj => ({
       id: obj.id || makeId('obj'),
       type: obj.type,
