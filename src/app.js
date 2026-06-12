@@ -1498,17 +1498,6 @@ function setupInventory() {
     const type = actBtn.closest('[data-instance-type]')?.dataset.instanceType || selectedInventoryItem;
     const item = itemMeta(type);
     if (!item) return;
-    if (act === 'place') {
-      if (inventoryOf(type) <= 0) {
-        showToast(`📦 ${item.label || ''} 보유 없음 — 퀘스트 재료/보상으로 획득하세요`);
-        return;
-      }
-      placeType = type;
-      if (!editorEnabled) setEditorEnabled(true);
-      setEditorTool('place');
-      document.querySelector('#map-frame-wrap')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      return;
-    }
     if (act === 'create') {
       createInstance(type);
       return;
@@ -1701,7 +1690,6 @@ function renderInstancePanel() {
       <div><b>${item.icon || '📦'} ${item.label}</b><span> 보유 ${ownedInstancesOf(type).length} · 제작중 ${instances.length - ownedInstancesOf(type).length} · 설치 ${placedCountOf(type)}</span></div>
       <div class="instance-actions">
         <button data-instance-act="create">🛠️ 제작</button>
-        <button data-instance-act="place">📍 설치 모드</button>
       </div>
     </div>
     <div class="instance-list">${rows || '<p class="quest-empty">아직 제작된 인스턴스가 없습니다. 제작 버튼으로 라벨/소유자/첨부를 가진 개체를 만드세요.</p>'}</div>
