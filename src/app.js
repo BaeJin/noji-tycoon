@@ -1801,7 +1801,7 @@ function renderInstancePanel() {
       <div class="instance-head">
         <strong>${item.icon || '📦'} ${item.label} <em>${owned ? '보유완료' : '제작중'}</em></strong>
         <div class="instance-card-actions">
-          ${owned ? `<button data-instance-act="edit">수정</button><button data-instance-act="place-instance">설치</button>` : `<button data-instance-act="complete">완료</button>`}
+          ${owned ? `<button data-instance-act="place-instance">설치</button><button data-instance-act="edit">수정</button>` : `<button data-instance-act="complete">완료</button>`}
           <button class="danger" data-instance-act="delete">삭제</button>
         </div>
       </div>
