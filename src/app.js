@@ -1161,7 +1161,8 @@ function handlePlaceClick(tile) {
     return;
   }
   if (!availableInstancesForPlacement(placeType).some(inst => inst.id === selectedInstance.id)) {
-    cancelPlacementMode('이미 배치된 인스턴스입니다');
+    restoreActiveMoveSnapshot();
+    clearPlacementMode('이미 배치된 인스턴스입니다');
     return;
   }
   const anchor = placeAnchorFor(tile, placeType, placeRotation);
@@ -1334,15 +1335,6 @@ function clearPlacementMode(message = '') {
   hideInstancePicker();
   updateGhost(null);
   if (message) showToast(message);
-}
-
-function cancelPlacementMode(message = '') {
-  const restored = restoreActiveMoveSnapshot();
-  pendingPlaceInstanceId = null;
-  hideInstancePicker();
-  updateGhost(null);
-  if (message) showToast(message);
-  else if (restored) showToast('이동 취소 — 원래 위치로 복구했습니다');
 }
 
 function demolishActivePlacement() {
