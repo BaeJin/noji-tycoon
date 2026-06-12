@@ -216,6 +216,7 @@ function normalizeGameState(raw) {
       state.instances.push({
         id: inst.id || makeId('inst'),
         type: inst.type,
+        status: inst.status === 'owned' ? 'owned' : 'draft',
         label: String(inst.label || state.items[inst.type].label || '인스턴스'),
         owner: String(inst.owner || ''),
         files: normalizeAttachments(inst.files),
@@ -325,6 +326,7 @@ function inventoryOf(type) { return gameState.inventory[type] || 0; }
 function placedCountOf(type) { return placedObjects.filter(obj => obj.type === type).length; }
 function ownedOf(type) { return inventoryOf(type) + placedCountOf(type); }
 function instancesOf(type) { return gameState.instances.filter(inst => inst.type === type); }
+function ownedInstancesOf(type) { return gameState.instances.filter(inst => inst.type === type && inst.status === 'owned'); }
 
 function addInventory(type, delta) {
   if (!itemMeta(type)) return;
@@ -1459,6 +1461,7 @@ function renderInventory() {
     const stock = inventoryOf(key);
     const placed = placedCountOf(key);
     const instCount = instancesOf(key).length;
+    const ownedInstCount = ownedInstancesOf(key).length;
     return `
     <button class="inv-card ${selectedInventoryItem === key ? 'selected' : ''} ${locked ? 'locked' : ''} ${!locked && stock === 0 ? 'empty' : ''}" data-inv-item="${key}"
       title="${locked ? `Lv.${it.unlockLevel}에 해금` : `${it.label} ${it.w}×${it.h}m — 클릭하면 인스턴스 목록`}">
@@ -1466,7 +1469,7 @@ function renderInventory() {
       <small>${it.label}</small>
       <i>${it.w}×${it.h}m${locked ? ` · Lv.${it.unlockLevel}` : ''}</i>
       ${!locked ? `<b class="inv-count">${stock}</b>` : ''}
-      ${!locked ? `<em class="inv-made">제작 ${instCount}</em>` : ''}
+      ${!locked ? `<em class="inv-made">보유 ${ownedInstCount} · 제작중 ${instCount - ownedInstCount}</em>` : ''}
       ${!locked && placed ? `<em class="inv-placed">설치 ${placed}</em>` : ''}
     </button>
   `;
@@ -1513,14 +1516,49 @@ function setupInventory() {
     const row = actBtn.closest('[data-instance-id]');
     const inst = row ? gameState.instances.find(x => x.id === row.dataset.instanceId) : null;
     if (!inst) return;
+    if (act === 'complete') {
+      inst.status = 'owned';
+      inst.updatedAt = new Date().toISOString();
+      addInventory(inst.type, 1);
+      saveGameState();
+      renderGame();
+      showToast(`✅ ${inst.label} 보유 완료`);
+      return;
+    }
+    if (act === 'edit') {
+      inst.status = 'draft';
+      inst.updatedAt = new Date().toISOString();
+      if (inventoryOf(inst.type) > 0) addInventory(inst.type, -1);
+      saveGameState();
+      renderGame();
+      showToast(`✏️ ${inst.label} 제작 상태로 전환`);
+      return;
+    }
+    if (act === 'place-instance') {
+      if (inst.status !== 'owned') {
+        showToast('제작 완료된 인스턴스만 설치할 수 있습니다');
+        return;
+      }
+      if (inventoryOf(inst.type) <= 0) {
+        showToast(`📦 ${item.label || ''} 보유 없음`);
+        return;
+      }
+      placeType = inst.type;
+      if (!editorEnabled) setEditorEnabled(true);
+      setEditorTool('place');
+      document.querySelector('#map-frame-wrap')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
     if (act === 'delete') {
       if (!armDanger(actBtn)) return;
+      if (inst.status === 'owned' && inventoryOf(inst.type) > 0) addInventory(inst.type, -1);
       gameState.instances = gameState.instances.filter(x => x.id !== inst.id);
       saveGameState();
       renderGame();
       return;
     }
     if (act === 'del-file' || act === 'del-image') {
+      if (inst.status === 'owned') return;
       const id = actBtn.dataset.attachmentId;
       if (act === 'del-file') inst.files = inst.files.filter(file => file.id !== id);
       else inst.images = inst.images.filter(file => file.id !== id);
@@ -1536,6 +1574,7 @@ function setupInventory() {
     const row = event.target.closest('[data-instance-id]');
     const inst = row ? gameState.instances.find(x => x.id === row.dataset.instanceId) : null;
     if (!inst) return;
+    if (inst.status === 'owned') return;
     if (field === 'label') inst.label = event.target.value;
     if (field === 'owner') inst.owner = event.target.value;
     inst.updatedAt = new Date().toISOString();
@@ -1549,6 +1588,7 @@ function setupInventory() {
       const row = event.target.closest('[data-instance-id]');
       const inst = row ? gameState.instances.find(x => x.id === row.dataset.instanceId) : null;
       if (!inst) return;
+      if (inst.status === 'owned') return;
       if (field === 'owner') inst.owner = event.target.value;
       inst.updatedAt = new Date().toISOString();
       saveGameState();
@@ -1560,6 +1600,7 @@ function setupInventory() {
     const row = event.target.closest('[data-instance-id]');
     const inst = row ? gameState.instances.find(x => x.id === row.dataset.instanceId) : null;
     if (!inst) return;
+    if (inst.status === 'owned') return;
     try {
       const files = await filesToAttachments([...event.target.files]);
       if (kind === 'images') inst.images.push(...files.filter(file => file.type.startsWith('image/')));
@@ -1582,6 +1623,7 @@ function createInstance(type) {
   gameState.instances.unshift({
     id: makeId('inst'),
     type,
+    status: 'draft',
     label: `${item.label} #${instancesOf(type).length + 1}`,
     owner: PLAYER_NAME,
     files: [],
@@ -1629,27 +1671,34 @@ function renderInstancePanel() {
   }
   const item = itemMeta(type);
   const instances = instancesOf(type);
-  const rows = instances.map(inst => `
-    <article class="instance-card" data-instance-id="${inst.id}">
+  const rows = instances.map(inst => {
+    const owned = inst.status === 'owned';
+    return `
+    <article class="instance-card ${owned ? 'owned' : 'draft'}" data-instance-id="${inst.id}">
       <div class="instance-head">
-        <strong>${item.icon || '📦'} ${item.label}</strong>
-        <button class="danger" data-instance-act="delete">삭제</button>
+        <strong>${item.icon || '📦'} ${item.label} <em>${owned ? '보유완료' : '제작중'}</em></strong>
+        <div class="instance-card-actions">
+          ${owned ? `<button data-instance-act="edit">수정</button><button data-instance-act="place-instance">설치</button>` : `<button data-instance-act="complete">완료</button>`}
+          <button class="danger" data-instance-act="delete">삭제</button>
+        </div>
       </div>
       <div class="instance-fields">
-        <label>라벨 <input type="text" data-instance-field="label" value="${inst.label}" placeholder="예: 큰 텐트 A" /></label>
-        <label>소유자 <select data-instance-field="owner">${playerOptions(inst.owner)}</select></label>
+        <label>라벨 <input type="text" data-instance-field="label" value="${inst.label}" placeholder="예: 큰 텐트 A" ${owned ? 'disabled' : ''} /></label>
+        <label>소유자 <select data-instance-field="owner" ${owned ? 'disabled' : ''}>${playerOptions(inst.owner)}</select></label>
       </div>
+      ${owned ? '<p class="instance-lock-note">보유 상태입니다. 수정 버튼을 누르면 다시 제작 상태로 전환됩니다.</p>' : ''}
       <div class="attachment-row">
-        <label class="attach-button">📎 파일 첨부<input type="file" data-attachment-input="files" multiple /></label>
-        <label class="attach-button">🖼️ 이미지 첨부<input type="file" data-attachment-input="images" accept="image/*" multiple /></label>
+        <label class="attach-button ${owned ? 'disabled' : ''}">📎 파일 첨부<input type="file" data-attachment-input="files" multiple ${owned ? 'disabled' : ''} /></label>
+        <label class="attach-button ${owned ? 'disabled' : ''}">🖼️ 이미지 첨부<input type="file" data-attachment-input="images" accept="image/*" multiple ${owned ? 'disabled' : ''} /></label>
       </div>
-      ${renderAttachmentList(inst.files, 'file')}
-      ${renderImageList(inst.images)}
+      ${renderAttachmentList(inst.files, 'file', owned)}
+      ${renderImageList(inst.images, owned)}
     </article>
-  `).join('');
+  `;
+  }).join('');
   panel.innerHTML = `
     <div class="instance-toolbar" data-instance-type="${type}">
-      <div><b>${item.icon || '📦'} ${item.label}</b><span> 보유 ${inventoryOf(type)} · 제작 ${instances.length} · 설치 ${placedCountOf(type)}</span></div>
+      <div><b>${item.icon || '📦'} ${item.label}</b><span> 보유 ${ownedInstancesOf(type).length} · 제작중 ${instances.length - ownedInstancesOf(type).length} · 설치 ${placedCountOf(type)}</span></div>
       <div class="instance-actions">
         <button data-instance-act="create">🛠️ 제작</button>
         <button data-instance-act="place">📍 설치 모드</button>
@@ -1659,18 +1708,18 @@ function renderInstancePanel() {
   `;
 }
 
-function renderAttachmentList(files, kind) {
+function renderAttachmentList(files, kind, locked = false) {
   if (!files?.length) return '';
   return `<div class="attachment-list">${files.map(file => `
     <a href="${file.dataUrl}" download="${file.name}" title="${file.type || ''}">📎 ${file.name}</a>
-    <button data-instance-act="del-${kind}" data-attachment-id="${file.id}" title="첨부 삭제">✕</button>
+    ${locked ? '' : `<button data-instance-act="del-${kind}" data-attachment-id="${file.id}" title="첨부 삭제">✕</button>`}
   `).join('')}</div>`;
 }
 
-function renderImageList(images) {
+function renderImageList(images, locked = false) {
   if (!images?.length) return '';
   return `<div class="image-list">${images.map(file => `
-    <figure><img src="${file.dataUrl}" alt="${file.name}" /><figcaption>${file.name} <button data-instance-act="del-image" data-attachment-id="${file.id}">✕</button></figcaption></figure>
+    <figure><img src="${file.dataUrl}" alt="${file.name}" /><figcaption>${file.name} ${locked ? '' : `<button data-instance-act="del-image" data-attachment-id="${file.id}">✕</button>`}</figcaption></figure>
   `).join('')}</div>`;
 }
 
