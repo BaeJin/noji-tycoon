@@ -1364,3 +1364,4 @@ body.modal-open { overflow: hidden; }
   font-weight: 800;
   pointer-events: none;
 }
+.instance-picker-list button.active { border-color: var(--gold); background: rgba(240,193,90,.16); }
