@@ -1172,7 +1172,7 @@ function handlePlaceClick(tile) {
   selectedInstance.updatedAt = new Date().toISOString();
   addInventory(placeType, -1);
   activeMoveSnapshot = null;
-  cancelPlacementMode();
+  clearPlacementMode();
   renderObjectsLayer();
   renderEditorContext();
   renderInventory();
@@ -1237,7 +1237,7 @@ function renderPlacementHud() {
   hud.innerHTML = `
     <div class="instance-picker-head">
       <strong>${item?.icon || '📦'} ${item?.label || inst.type}</strong>
-      <button data-placement-act="cancel" title="철거 (D)">✕</button>
+      <button data-placement-act="demolish" title="철거 (D)">✕</button>
     </div>
     <div class="placement-hud-body">
       <b>${inst.label}</b>
@@ -1246,7 +1246,7 @@ function renderPlacementHud() {
     </div>
     <div class="placement-hud-actions">
       <button data-placement-act="rotate">↻ 회전</button>
-      <button data-placement-act="cancel">철거</button>
+      <button data-placement-act="demolish">철거</button>
     </div>
   `;
 }
@@ -1329,6 +1329,13 @@ function restoreActiveMoveSnapshot() {
   return true;
 }
 
+function clearPlacementMode(message = '') {
+  pendingPlaceInstanceId = null;
+  hideInstancePicker();
+  updateGhost(null);
+  if (message) showToast(message);
+}
+
 function cancelPlacementMode(message = '') {
   const restored = restoreActiveMoveSnapshot();
   pendingPlaceInstanceId = null;
@@ -1336,6 +1343,22 @@ function cancelPlacementMode(message = '') {
   updateGhost(null);
   if (message) showToast(message);
   else if (restored) showToast('이동 취소 — 원래 위치로 복구했습니다');
+}
+
+function demolishActivePlacement() {
+  if (activeMoveSnapshot) {
+    const inst = instanceById(activeMoveSnapshot.instanceId);
+    const label = inst?.label || itemMeta(activeMoveSnapshot.type)?.label || '';
+    activeMoveSnapshot = null;
+    clearPlacementMode(`철거 완료${label ? ` — ${label}` : ''}`);
+    renderObjectsLayer();
+    renderInventory();
+    renderInstancePanel();
+    saveGameState();
+    saveMapToStorage();
+    return;
+  }
+  clearPlacementMode('설치 모드 해제');
 }
 
 function removeObject(id, { refund = true } = {}) {
@@ -2312,7 +2335,7 @@ function setupInlineEditor() {
   mapDom.instancePicker?.addEventListener('click', event => {
     const placementAct = event.target.closest('[data-placement-act]');
     if (placementAct) {
-      if (placementAct.dataset.placementAct === 'cancel') cancelPlacementMode();
+      if (placementAct.dataset.placementAct === 'demolish') demolishActivePlacement();
       if (placementAct.dataset.placementAct === 'rotate') {
         rotatePlaceObject();
         renderPlacementHud();
@@ -2350,7 +2373,7 @@ function setupInlineEditor() {
       return;
     }
     if (event.key.toLowerCase() === 'd' && isPlacementActive()) {
-      cancelPlacementMode();
+      demolishActivePlacement();
       return;
     }
     if (event.key.toLowerCase() === 'r' && isPlacementActive()) {
