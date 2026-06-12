@@ -125,6 +125,7 @@ const mapDom = {
   get wrap() { return document.querySelector('#map-frame-wrap'); },
   get canvasLayer() { return document.querySelector('#map-canvas-layer'); },
   get tooltip() { return document.querySelector('#tile-tooltip'); },
+  get instancePicker() { return document.querySelector('#instance-picker'); },
   get legend() { return document.querySelector('#zone-legend'); },
   get editorContext() { return document.querySelector('#editor-context'); },
   get editorSettings() { return document.querySelector('#editor-settings'); },
@@ -327,6 +328,17 @@ function placedCountOf(type) { return placedObjects.filter(obj => obj.type === t
 function ownedOf(type) { return inventoryOf(type) + placedCountOf(type); }
 function instancesOf(type) { return gameState.instances.filter(inst => inst.type === type); }
 function ownedInstancesOf(type) { return gameState.instances.filter(inst => inst.type === type && inst.status === 'owned'); }
+
+function instanceById(id) {
+  return gameState.instances.find(inst => inst.id === id) || null;
+}
+
+function availableInstancesForPlacement(type, currentObjectId = null) {
+  const used = new Set(placedObjects
+    .filter(obj => obj.instanceId && obj.id !== currentObjectId)
+    .map(obj => obj.instanceId));
+  return ownedInstancesOf(type).filter(inst => !used.has(inst.id));
+}
 
 function addInventory(type, delta) {
   if (!itemMeta(type)) return;
@@ -667,6 +679,8 @@ function renderObjectsLayer() {
     const cy = y + ph / 2;
     const iconSize = Math.min(pw, ph) * 0.74;
     const arrowSpan = Math.min(pw, ph) * 0.22;
+    const inst = instanceById(obj.instanceId);
+    const label = inst?.label || '';
     const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
     g.setAttribute('class', 'map-object');
     g.dataset.objectId = obj.id;
@@ -675,6 +689,7 @@ function renderObjectsLayer() {
       <polygon class="map-object-arrow" points="${cx - arrowSpan},${y + ph * 0.16 + arrowSpan} ${cx + arrowSpan},${y + ph * 0.16 + arrowSpan} ${cx},${y + ph * 0.16}"
         transform="rotate(${obj.rot} ${cx} ${cy})" />
       <text class="map-object-icon" x="${cx}" y="${cy}" font-size="${iconSize}">${meta.icon}</text>
+      ${label ? `<text class="map-object-label" x="${cx}" y="${y + ph - 4}">${label}</text>` : ''}
     `;
     layer.appendChild(g);
   }
@@ -1113,7 +1128,49 @@ function handlePlaceClick(tile) {
   renderInventory();
   saveMapToStorage();
   renderInlineEditorStats();
+  showInstancePicker(candidate.id);
   updateGhost(tile);
+}
+
+function hideInstancePicker() {
+  const picker = mapDom.instancePicker;
+  if (!picker) return;
+  picker.hidden = true;
+  picker.innerHTML = '';
+}
+
+function showInstancePicker(objectId) {
+  const picker = mapDom.instancePicker;
+  if (!picker) return;
+  const obj = placedObjects.find(o => o.id === objectId);
+  if (!obj) { hideInstancePicker(); return; }
+  const item = itemMeta(obj.type);
+  const instances = availableInstancesForPlacement(obj.type, objectId);
+  picker.hidden = false;
+  picker.dataset.objectId = objectId;
+  picker.innerHTML = `
+    <div class="instance-picker-head">
+      <strong>${item?.icon || '📦'} ${item?.label || obj.type} 인스턴스 선택</strong>
+      <button data-picker-act="close" title="나중에 선택">✕</button>
+    </div>
+    ${instances.length ? `
+      <div class="instance-picker-list">
+        ${instances.map(inst => `<button data-picker-instance="${inst.id}"><b>${inst.label}</b>${inst.owner ? `<span>${inst.owner}</span>` : ''}</button>`).join('')}
+      </div>
+    ` : '<p>선택 가능한 보유완료 인스턴스가 없습니다. 인스턴스를 완료한 뒤 다시 설치하세요.</p>'}
+  `;
+}
+
+function selectInstanceForObject(objectId, instanceId) {
+  const obj = placedObjects.find(o => o.id === objectId);
+  const inst = instanceById(instanceId);
+  if (!obj || !inst || inst.type !== obj.type || inst.status !== 'owned') return;
+  if (!availableInstancesForPlacement(obj.type, objectId).some(candidate => candidate.id === inst.id)) return;
+  obj.instanceId = inst.id;
+  saveMapToStorage();
+  renderObjectsLayer();
+  hideInstancePicker();
+  showToast(`📍 ${inst.label} 배치 연결`);
 }
 
 function removeObject(id, { refund = true } = {}) {
@@ -2123,6 +2180,14 @@ function setupInlineEditor() {
     }
   });
 
+  mapDom.instancePicker?.addEventListener('click', event => {
+    const close = event.target.closest('[data-picker-act="close"]');
+    if (close) { hideInstancePicker(); return; }
+    const button = event.target.closest('[data-picker-instance]');
+    if (!button) return;
+    selectInstanceForObject(mapDom.instancePicker.dataset.objectId, button.dataset.pickerInstance);
+  });
+
   document.querySelector('#editor-settings-toggle').addEventListener('click', () => {
     if (mapDom.editorSettings.hidden) openEditorSettings();
     else closeEditorSettings();
@@ -2747,7 +2812,8 @@ function applyMapPayload(payload) {
       type: obj.type,
       q: obj.q,
       r: obj.r,
-      rot: OBJECT_ROTATIONS.includes(obj.rot) ? obj.rot : 0
+      rot: OBJECT_ROTATIONS.includes(obj.rot) ? obj.rot : 0,
+      instanceId: instanceById(obj.instanceId)?.type === obj.type ? obj.instanceId : null
     }))
     .filter(obj => objectFitsBounds(obj));
   syncMapSizeInputs();
