@@ -1372,3 +1372,5 @@ body.modal-open { overflow: hidden; }
 .placement-hud-actions { display:flex; gap:8px; }
 .placement-hud-actions button { flex:1; border:1px solid var(--line); border-radius:10px; background:rgba(0,0,0,.25); color:var(--text); padding:8px 9px; cursor:pointer; }
 .placement-hud-actions button:hover { border-color:var(--gold); }
+.instance-card.placed { border-color: rgba(111, 185, 255, .42); background: rgba(28, 64, 102, .2); }
+.instance-card.placed .instance-head strong em { background: rgba(111, 185, 255, .16); color: #9fd0ff; }

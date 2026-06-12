@@ -218,7 +218,7 @@ function normalizeGameState(raw) {
       state.instances.push({
         id: inst.id || makeId('inst'),
         type: inst.type,
-        status: inst.status === 'owned' ? 'owned' : 'draft',
+        status: ['owned', 'placed'].includes(inst.status) ? inst.status : 'draft',
         label: String(inst.label || state.items[inst.type].label || '인스턴스'),
         owner: String(inst.owner || ''),
         files: normalizeAttachments(inst.files),
@@ -329,6 +329,7 @@ function placedCountOf(type) { return placedObjects.filter(obj => obj.type === t
 function ownedOf(type) { return inventoryOf(type) + placedCountOf(type); }
 function instancesOf(type) { return gameState.instances.filter(inst => inst.type === type); }
 function ownedInstancesOf(type) { return gameState.instances.filter(inst => inst.type === type && inst.status === 'owned'); }
+function placedInstancesOf(type) { return gameState.instances.filter(inst => inst.type === type && inst.status === 'placed'); }
 
 function instanceById(id) {
   return gameState.instances.find(inst => inst.id === id) || null;
@@ -339,6 +340,20 @@ function availableInstancesForPlacement(type, currentObjectId = null) {
     .filter(obj => obj.instanceId && obj.id !== currentObjectId)
     .map(obj => obj.instanceId));
   return ownedInstancesOf(type).filter(inst => !used.has(inst.id));
+}
+
+function syncPlacedInstanceStatuses() {
+  if (!gameState?.instances) return;
+  const placedIds = new Set(placedObjects.map(obj => obj.instanceId).filter(Boolean));
+  let changed = false;
+  for (const inst of gameState.instances) {
+    if (placedIds.has(inst.id) && inst.status !== 'placed') {
+      inst.status = 'placed';
+      inst.updatedAt = new Date().toISOString();
+      changed = true;
+    }
+  }
+  if (changed) saveGameState();
 }
 
 function addInventory(type, delta) {
@@ -1139,11 +1154,15 @@ function handlePlaceClick(tile) {
   const candidate = { id: makeId('obj'), type: placeType, q: anchor.q, r: anchor.r, rot: placeRotation, instanceId: selectedInstance.id };
   if (!canPlaceObject(candidate)) return;
   placedObjects.push(candidate);
+  selectedInstance.status = 'placed';
+  selectedInstance.updatedAt = new Date().toISOString();
   addInventory(placeType, -1);
   cancelPlacementMode();
   renderObjectsLayer();
   renderEditorContext();
   renderInventory();
+  renderInstancePanel();
+  saveGameState();
   saveMapToStorage();
   renderInlineEditorStats();
   updateGhost(tile);
@@ -1236,13 +1255,20 @@ function startInstancePlacement(instanceId) {
 }
 
 function startObjectPlacement(obj) {
+  const inst = instanceById(obj.instanceId);
   placedObjects = placedObjects.filter(candidate => candidate.id !== obj.id);
   addInventory(obj.type, 1);
   placeType = obj.type;
   placeRotation = obj.rot;
-  pendingPlaceInstanceId = obj.instanceId || availableInstancesForPlacement(obj.type, obj.id)[0]?.id || null;
+  if (inst && inst.type === obj.type) {
+    inst.status = 'owned';
+    inst.updatedAt = new Date().toISOString();
+  }
+  pendingPlaceInstanceId = inst?.id || availableInstancesForPlacement(obj.type, obj.id)[0]?.id || null;
   renderObjectsLayer();
   renderInventory();
+  renderInstancePanel();
+  saveGameState();
   saveMapToStorage();
   if (pendingPlaceInstanceId) {
     renderPlacementHud();
@@ -1264,9 +1290,18 @@ function cancelPlacementMode(message = '') {
 function removeObject(id, { refund = true } = {}) {
   const obj = placedObjects.find(o => o.id === id);
   placedObjects = placedObjects.filter(o => o.id !== id);
-  if (obj && refund) addInventory(obj.type, 1);
+  if (obj && refund) {
+    addInventory(obj.type, 1);
+    const inst = instanceById(obj.instanceId);
+    if (inst && inst.status === 'placed') {
+      inst.status = 'owned';
+      inst.updatedAt = new Date().toISOString();
+    }
+  }
   renderObjectsLayer();
   renderInventory();
+  renderInstancePanel();
+  saveGameState();
   saveMapToStorage();
   renderInlineEditorStats(obj ? `${itemMeta(obj.type)?.label || ''} 제거됨${refund ? ' (인벤토리 반환)' : ''}` : '');
   if (lastHoverTile) updateGhost(lastHoverTile);
@@ -1607,6 +1642,8 @@ function renderInventory() {
     const placed = placedCountOf(key);
     const instCount = instancesOf(key).length;
     const ownedInstCount = ownedInstancesOf(key).length;
+    const placedInstCount = placedInstancesOf(key).length;
+    const draftInstCount = instCount - ownedInstCount - placedInstCount;
     return `
     <button class="inv-card ${selectedInventoryItem === key ? 'selected' : ''} ${locked ? 'locked' : ''} ${!locked && stock === 0 ? 'empty' : ''}" data-inv-item="${key}"
       title="${locked ? `Lv.${it.unlockLevel}에 해금` : `${it.label} ${it.w}×${it.h}m — 클릭하면 인스턴스 목록`}">
@@ -1614,7 +1651,7 @@ function renderInventory() {
       <small>${it.label}</small>
       <i>${it.w}×${it.h}m${locked ? ` · Lv.${it.unlockLevel}` : ''}</i>
       ${!locked ? `<b class="inv-count">${stock}</b>` : ''}
-      ${!locked ? `<em class="inv-made">보유 ${ownedInstCount} · 제작중 ${instCount - ownedInstCount}</em>` : ''}
+      ${!locked ? `<em class="inv-made">보유 ${ownedInstCount} · 제작중 ${draftInstCount} · 설치 ${placedInstCount}</em>` : ''}
       ${!locked && placed ? `<em class="inv-placed">설치 ${placed}</em>` : ''}
     </button>
   `;
@@ -1660,6 +1697,10 @@ function setupInventory() {
       return;
     }
     if (act === 'edit') {
+      if (inst.status === 'placed') {
+        showToast('설치된 인스턴스는 맵에서 먼저 집어 든 뒤 수정하세요');
+        return;
+      }
       inst.status = 'draft';
       inst.updatedAt = new Date().toISOString();
       if (inventoryOf(inst.type) > 0) addInventory(inst.type, -1);
@@ -1671,8 +1712,10 @@ function setupInventory() {
     if (act === 'delete') {
       if (!armDanger(actBtn)) return;
       if (inst.status === 'owned' && inventoryOf(inst.type) > 0) addInventory(inst.type, -1);
+      if (inst.status === 'placed') placedObjects = placedObjects.filter(obj => obj.instanceId !== inst.id);
       gameState.instances = gameState.instances.filter(x => x.id !== inst.id);
       saveGameState();
+      saveMapToStorage();
       renderGame();
       return;
     }
@@ -1681,7 +1724,7 @@ function setupInventory() {
       return;
     }
     if (act === 'del-file' || act === 'del-image') {
-      if (inst.status === 'owned') return;
+      if (inst.status !== 'draft') return;
       const id = actBtn.dataset.attachmentId;
       if (act === 'del-file') inst.files = inst.files.filter(file => file.id !== id);
       else inst.images = inst.images.filter(file => file.id !== id);
@@ -1697,7 +1740,7 @@ function setupInventory() {
     const row = event.target.closest('[data-instance-id]');
     const inst = row ? gameState.instances.find(x => x.id === row.dataset.instanceId) : null;
     if (!inst) return;
-    if (inst.status === 'owned') return;
+    if (inst.status !== 'draft') return;
     if (field === 'label') inst.label = event.target.value;
     if (field === 'owner') inst.owner = event.target.value;
     inst.updatedAt = new Date().toISOString();
@@ -1711,7 +1754,7 @@ function setupInventory() {
       const row = event.target.closest('[data-instance-id]');
       const inst = row ? gameState.instances.find(x => x.id === row.dataset.instanceId) : null;
       if (!inst) return;
-      if (inst.status === 'owned') return;
+      if (inst.status !== 'draft') return;
       if (field === 'owner') inst.owner = event.target.value;
       inst.updatedAt = new Date().toISOString();
       saveGameState();
@@ -1723,7 +1766,7 @@ function setupInventory() {
     const row = event.target.closest('[data-instance-id]');
     const inst = row ? gameState.instances.find(x => x.id === row.dataset.instanceId) : null;
     if (!inst) return;
-    if (inst.status === 'owned') return;
+    if (inst.status !== 'draft') return;
     try {
       const files = await filesToAttachments([...event.target.files]);
       if (kind === 'images') inst.images.push(...files.filter(file => file.type.startsWith('image/')));
@@ -1796,32 +1839,35 @@ function renderInstancePanel() {
   const instances = instancesOf(type);
   const rows = instances.map(inst => {
     const owned = inst.status === 'owned';
+    const placed = inst.status === 'placed';
+    const locked = owned || placed;
+    const statusLabel = placed ? '설치' : owned ? '보유완료' : '제작중';
     return `
-    <article class="instance-card ${owned ? 'owned' : 'draft'}" data-instance-id="${inst.id}">
+    <article class="instance-card ${placed ? 'placed' : owned ? 'owned' : 'draft'}" data-instance-id="${inst.id}">
       <div class="instance-head">
-        <strong>${item.icon || '📦'} ${item.label} <em>${owned ? '보유완료' : '제작중'}</em></strong>
+        <strong>${item.icon || '📦'} ${item.label} <em>${statusLabel}</em></strong>
         <div class="instance-card-actions">
-          ${owned ? `<button data-instance-act="place-instance">설치</button><button data-instance-act="edit">수정</button>` : `<button data-instance-act="complete">완료</button>`}
+          ${placed ? '' : owned ? `<button data-instance-act="place-instance">설치</button><button data-instance-act="edit">수정</button>` : `<button data-instance-act="complete">완료</button>`}
           <button class="danger" data-instance-act="delete">삭제</button>
         </div>
       </div>
       <div class="instance-fields">
-        <label>라벨 <input type="text" data-instance-field="label" value="${inst.label}" placeholder="예: 큰 텐트 A" ${owned ? 'disabled' : ''} /></label>
-        <label>소유자 <select data-instance-field="owner" ${owned ? 'disabled' : ''}>${playerOptions(inst.owner)}</select></label>
+        <label>라벨 <input type="text" data-instance-field="label" value="${inst.label}" placeholder="예: 큰 텐트 A" ${locked ? 'disabled' : ''} /></label>
+        <label>소유자 <select data-instance-field="owner" ${locked ? 'disabled' : ''}>${playerOptions(inst.owner)}</select></label>
       </div>
-      ${owned ? '<p class="instance-lock-note">보유 상태입니다. 수정 버튼을 누르면 다시 제작 상태로 전환됩니다.</p>' : ''}
+      ${placed ? '<p class="instance-lock-note">맵에 설치된 상태입니다. 맵 오브젝트를 클릭해 집어 들면 보유 상태로 돌아갑니다.</p>' : owned ? '<p class="instance-lock-note">보유 상태입니다. 수정 버튼을 누르면 다시 제작 상태로 전환됩니다.</p>' : ''}
       <div class="attachment-row">
-        <label class="attach-button ${owned ? 'disabled' : ''}">📎 파일 첨부<input type="file" data-attachment-input="files" multiple ${owned ? 'disabled' : ''} /></label>
-        <label class="attach-button ${owned ? 'disabled' : ''}">🖼️ 이미지 첨부<input type="file" data-attachment-input="images" accept="image/*" multiple ${owned ? 'disabled' : ''} /></label>
+        <label class="attach-button ${locked ? 'disabled' : ''}">📎 파일 첨부<input type="file" data-attachment-input="files" multiple ${locked ? 'disabled' : ''} /></label>
+        <label class="attach-button ${locked ? 'disabled' : ''}">🖼️ 이미지 첨부<input type="file" data-attachment-input="images" accept="image/*" multiple ${locked ? 'disabled' : ''} /></label>
       </div>
-      ${renderAttachmentList(inst.files, 'file', owned)}
-      ${renderImageList(inst.images, owned)}
+      ${renderAttachmentList(inst.files, 'file', locked)}
+      ${renderImageList(inst.images, locked)}
     </article>
   `;
   }).join('');
   panel.innerHTML = `
     <div class="instance-toolbar" data-instance-type="${type}">
-      <div><b>${item.icon || '📦'} ${item.label}</b><span> 보유 ${ownedInstancesOf(type).length} · 제작중 ${instances.length - ownedInstancesOf(type).length} · 설치 ${placedCountOf(type)}</span></div>
+      <div><b>${item.icon || '📦'} ${item.label}</b><span> 보유 ${ownedInstancesOf(type).length} · 제작중 ${instances.length - ownedInstancesOf(type).length - placedInstancesOf(type).length} · 설치 ${placedInstancesOf(type).length}</span></div>
       <div class="instance-actions">
         <button data-instance-act="create">🛠️ 제작</button>
       </div>
@@ -2860,6 +2906,7 @@ function applyMapPayload(payload) {
       instanceId: instanceById(obj.instanceId)?.type === obj.type ? obj.instanceId : null
     }))
     .filter(obj => objectFitsBounds(obj));
+  syncPlacedInstanceStatuses();
   syncMapSizeInputs();
   return true;
 }
