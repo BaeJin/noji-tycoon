@@ -357,6 +357,19 @@ function syncPlacedInstanceStatuses() {
   if (changed) saveGameState();
 }
 
+function syncInventoryWithInstanceStates() {
+  if (!gameState?.items || !gameState?.instances) return;
+  let changed = false;
+  for (const type of Object.keys(gameState.items)) {
+    const next = ownedInstancesOf(type).length;
+    if (inventoryOf(type) !== next) {
+      gameState.inventory[type] = next;
+      changed = true;
+    }
+  }
+  if (changed) saveGameState();
+}
+
 function addInventory(type, delta) {
   if (!itemMeta(type)) return;
   gameState.inventory[type] = Math.max(0, inventoryOf(type) + delta);
@@ -1668,6 +1681,7 @@ function completeQuest(quest) {
 function renderInventory() {
   const el = document.querySelector('#inventory');
   if (!el) return;
+  syncInventoryWithInstanceStates();
   const entries = Object.entries(gameState.items);
   if (!entries.length) {
     el.innerHTML = '<p class="quest-empty">아이템이 없습니다. ⚙ 관리 → 아이템에서 정의하세요.</p>';
@@ -1675,7 +1689,7 @@ function renderInventory() {
   }
   el.innerHTML = entries.map(([key, it]) => {
     const locked = !isItemUnlocked(key);
-    const stock = inventoryOf(key);
+    const stock = ownedInstancesOf(key).length;
     const placed = placedCountOf(key);
     const instCount = instancesOf(key).length;
     const ownedInstCount = ownedInstancesOf(key).length;
