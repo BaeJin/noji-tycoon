@@ -1298,13 +1298,14 @@ function startObjectPlacement(obj) {
   if (lastHoverTile) updateGhost(lastHoverTile);
 }
 
-function startPlacedInstanceMove(instanceId) {
+function demolishPlacedInstance(instanceId) {
   const obj = placedObjects.find(candidate => candidate.instanceId === instanceId);
   if (!obj) {
     showToast('맵에서 해당 인스턴스 오브젝트를 찾지 못했습니다');
     return;
   }
-  startObjectPlacement(obj);
+  removeObject(obj.id, { refund: true });
+  showToast('철거 완료 — 보유 상태로 돌아갔습니다');
 }
 
 function restoreActiveMoveSnapshot() {
@@ -1761,12 +1762,10 @@ function setupInventory() {
       return;
     }
     if (act === 'delete') {
+      if (inst.status !== 'draft') return;
       if (!armDanger(actBtn)) return;
-      if (inst.status === 'owned' && inventoryOf(inst.type) > 0) addInventory(inst.type, -1);
-      if (inst.status === 'placed') placedObjects = placedObjects.filter(obj => obj.instanceId !== inst.id);
       gameState.instances = gameState.instances.filter(x => x.id !== inst.id);
       saveGameState();
-      saveMapToStorage();
       renderGame();
       return;
     }
@@ -1774,8 +1773,8 @@ function setupInventory() {
       startInstancePlacement(inst.id);
       return;
     }
-    if (act === 'move-instance') {
-      startPlacedInstanceMove(inst.id);
+    if (act === 'demolish-instance') {
+      demolishPlacedInstance(inst.id);
       return;
     }
     if (act === 'del-file' || act === 'del-image') {
@@ -1902,8 +1901,7 @@ function renderInstancePanel() {
       <div class="instance-head">
         <strong>${item.icon || '📦'} ${item.label} <em>${statusLabel}</em></strong>
         <div class="instance-card-actions">
-          ${placed ? `<button data-instance-act="move-instance">이동</button>` : owned ? `<button data-instance-act="place-instance">설치</button><button data-instance-act="edit">수정</button>` : `<button data-instance-act="complete">완료</button>`}
-          <button class="danger" data-instance-act="delete">삭제</button>
+          ${placed ? `<button class="danger" data-instance-act="demolish-instance">철거</button>` : owned ? `<button data-instance-act="place-instance">설치</button><button data-instance-act="edit">수정</button>` : `<button data-instance-act="complete">완료</button><button class="danger" data-instance-act="delete">삭제</button>`}
         </div>
       </div>
       <div class="instance-fields">
