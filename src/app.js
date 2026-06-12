@@ -34,7 +34,10 @@ const seedItems = {
   tent: { label: '텐트', icon: '⛺', w: 10, h: 5, unlockLevel: 0, tint: '#3e8f66' },
   vehicle: { label: '차량', icon: '🚙', w: 5, h: 2, unlockLevel: 0, tint: '#7890a8' },
   toilet: { label: '간이화장실', icon: '🚻', w: 2, h: 2, unlockLevel: 0, tint: '#9b8456' },
-  firepit: { label: '화로대', icon: '🔥', w: 1, h: 1, unlockLevel: 0, tint: '#d65345' }
+  firepit: { label: '화로대', icon: '🔥', w: 1, h: 1, unlockLevel: 0, tint: '#d65345' },
+  brushCutter: { label: '제초기', icon: '🌿', w: 1, h: 1, unlockLevel: 0, tint: '#5fa84f' },
+  burner: { label: '버너', icon: '🔥', w: 1, h: 1, unlockLevel: 0, tint: '#d97745' },
+  griddle: { label: '그리들', icon: '🍳', w: 1, h: 1, unlockLevel: 0, tint: '#8b8f98' }
 };
 
 const ITEM_TINTS = ['#3e8f66', '#7890a8', '#9b8456', '#d65345', '#6d8c3f', '#b28b45', '#5a7da8', '#a85a8f'];
@@ -93,6 +96,8 @@ let terrainMode = 'raise';
 let terrainLevel = 2;
 let contoursVisible = localStorage.getItem('noji-contours') !== 'false';
 let zoneBoundariesVisible = localStorage.getItem('noji-zone-boundaries') === 'true';
+let mapLabelsVisible = localStorage.getItem('noji-map-labels') !== 'false';
+let equipBubblesAlwaysVisible = localStorage.getItem('noji-equip-bubbles') === 'true';
 let placedObjects = [];
 let placeType = 'tent';
 let pendingPlaceInstanceId = null;
@@ -208,6 +213,9 @@ function normalizeGameState(raw) {
       tint: typeof it.tint === 'string' ? it.tint : null
     };
   }
+  for (const [key, it] of Object.entries(seedItems)) {
+    if (!state.items[key]) state.items[key] = structuredClone(it);
+  }
   if (raw.inventory && typeof raw.inventory === 'object') {
     for (const [key, count] of Object.entries(raw.inventory)) {
       if (state.items[key]) state.inventory[key] = Math.max(0, Number.parseInt(count, 10) || 0);
@@ -219,7 +227,8 @@ function normalizeGameState(raw) {
       state.instances.push({
         id: inst.id || makeId('inst'),
         type: inst.type,
-        status: ['owned', 'placed'].includes(inst.status) ? inst.status : 'draft',
+        status: ['owned', 'placed', 'equipped'].includes(inst.status) ? inst.status : 'draft',
+        equippedTo: typeof inst.equippedTo === 'string' ? inst.equippedTo : '',
         label: String(inst.label || state.items[inst.type].label || '인스턴스'),
         owner: String(inst.owner || ''),
         files: normalizeAttachments(inst.files),
@@ -331,6 +340,8 @@ function ownedOf(type) { return inventoryOf(type) + placedCountOf(type); }
 function instancesOf(type) { return gameState.instances.filter(inst => inst.type === type); }
 function ownedInstancesOf(type) { return gameState.instances.filter(inst => inst.type === type && inst.status === 'owned'); }
 function placedInstancesOf(type) { return gameState.instances.filter(inst => inst.type === type && inst.status === 'placed'); }
+function equippedInstancesOf(type) { return gameState.instances.filter(inst => inst.type === type && inst.status === 'equipped'); }
+function equippedChildrenOf(parentId) { return gameState.instances.filter(inst => inst.status === 'equipped' && inst.equippedTo === parentId); }
 
 function instanceById(id) {
   return gameState.instances.find(inst => inst.id === id) || null;
@@ -343,6 +354,17 @@ function availableInstancesForPlacement(type, currentObjectId = null) {
   return ownedInstancesOf(type).filter(inst => !used.has(inst.id));
 }
 
+function isInstanceInEquipChain(parentId, childId) {
+  let cursor = parentId;
+  const seen = new Set();
+  while (cursor && !seen.has(cursor)) {
+    if (cursor === childId) return true;
+    seen.add(cursor);
+    cursor = instanceById(cursor)?.equippedTo || '';
+  }
+  return false;
+}
+
 function syncPlacedInstanceStatuses() {
   if (!gameState?.instances) return;
   const placedIds = new Set(placedObjects.map(obj => obj.instanceId).filter(Boolean));
@@ -350,6 +372,12 @@ function syncPlacedInstanceStatuses() {
   for (const inst of gameState.instances) {
     if (placedIds.has(inst.id) && inst.status !== 'placed') {
       inst.status = 'placed';
+      inst.equippedTo = '';
+      inst.updatedAt = new Date().toISOString();
+      changed = true;
+    } else if (inst.status === 'equipped' && !instanceById(inst.equippedTo)) {
+      inst.status = 'owned';
+      inst.equippedTo = '';
       inst.updatedAt = new Date().toISOString();
       changed = true;
     }
@@ -694,10 +722,39 @@ function repaintTiles() {
 
 /* ---------- placed objects: rendering ---------- */
 
+function rectsOverlap(a, b) {
+  return !(a.x + a.w <= b.x || b.x + b.w <= a.x || a.y + a.h <= b.y || b.y + b.h <= a.y);
+}
+
+function chooseEquipBubbleRect(obj, base, usedRects) {
+  const count = Math.max(1, equippedChildrenOf(obj.instanceId).length);
+  const bubbleW = Math.max(SQUARE_SIZE_PX * 2.2, count * SQUARE_SIZE_PX * 1.25 + SQUARE_SIZE_PX * 0.9);
+  const bubbleH = SQUARE_SIZE_PX * 1.8;
+  const gap = SQUARE_SIZE_PX * 0.4;
+  const candidates = [
+    { x: base.cx - bubbleW / 2, y: base.y - bubbleH - gap, w: bubbleW, h: bubbleH, anchor: 'top' },
+    { x: base.cx - bubbleW / 2, y: base.y + base.ph + gap, w: bubbleW, h: bubbleH, anchor: 'bottom' },
+    { x: base.x + base.pw + gap, y: base.cy - bubbleH / 2, w: bubbleW, h: bubbleH, anchor: 'right' },
+    { x: base.x - bubbleW - gap, y: base.cy - bubbleH / 2, w: bubbleW, h: bubbleH, anchor: 'left' }
+  ];
+  const view = viewSizePx();
+  const fits = rect => rect.x >= 0 && rect.y >= 0 && rect.x + rect.w <= view.w && rect.y + rect.h <= view.h;
+  const chosen = candidates.find(rect => fits(rect) && !usedRects.some(used => rectsOverlap(rect, used)))
+    || candidates.find(fits)
+    || candidates[1];
+  usedRects.push(chosen);
+  return chosen;
+}
+
 function renderObjectsLayer() {
   const layer = mapDom.svg.querySelector('#object-layer');
   if (!layer) return;
   layer.innerHTML = '';
+  const usedBubbleRects = placedObjects.map(obj => {
+    const { w, h } = footprintOf(obj.type, obj.rot);
+    const { x, y } = tileRectPx(obj.q, obj.r);
+    return { x, y, w: w * SQUARE_SIZE_PX, h: h * SQUARE_SIZE_PX };
+  });
   for (const obj of placedObjects) {
     const meta = itemMeta(obj.type);
     if (!meta) continue;
@@ -711,15 +768,26 @@ function renderObjectsLayer() {
     const arrowSpan = Math.min(pw, ph) * 0.22;
     const inst = instanceById(obj.instanceId);
     const label = inst?.label || '';
+    const equipped = inst ? equippedChildrenOf(inst.id) : [];
+    const bubble = equipped.length ? chooseEquipBubbleRect(obj, { x, y, pw, ph, cx, cy }, usedBubbleRects) : null;
     const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-    g.setAttribute('class', 'map-object');
+    g.setAttribute('class', `map-object${equipped.length ? ' has-equipped' : ''}`);
     g.dataset.objectId = obj.id;
     g.innerHTML = `
       <rect class="map-object-rect" x="${x}" y="${y}" width="${pw}" height="${ph}" rx="${SQUARE_SIZE_PX * 0.3}" style="fill:${itemTint(obj.type)}" />
       <polygon class="map-object-arrow" points="${cx - arrowSpan},${y + ph * 0.16 + arrowSpan} ${cx + arrowSpan},${y + ph * 0.16 + arrowSpan} ${cx},${y + ph * 0.16}"
         transform="rotate(${obj.rot} ${cx} ${cy})" />
       <text class="map-object-icon" x="${cx}" y="${cy}" font-size="${iconSize}">${meta.icon}</text>
-      ${label ? `<text class="map-object-label" x="${cx}" y="${y + ph - 4}">${label}</text>` : ''}
+      ${label && mapLabelsVisible ? `<text class="map-object-label" x="${cx}" y="${y + ph - 4}">${label}</text>` : ''}
+      ${bubble ? `
+        <g class="equip-bubble ${equipBubblesAlwaysVisible ? 'always' : 'hover'}" data-anchor="${bubble.anchor}">
+          <rect class="equip-bubble-box" x="${bubble.x}" y="${bubble.y}" width="${bubble.w}" height="${bubble.h}" rx="${SQUARE_SIZE_PX * 0.55}" />
+          ${equipped.map((child, idx) => {
+            const childMeta = itemMeta(child.type);
+            return `<text class="equip-bubble-icon" x="${bubble.x + SQUARE_SIZE_PX * 0.8 + idx * SQUARE_SIZE_PX * 1.25}" y="${bubble.y + bubble.h / 2}" font-size="${SQUARE_SIZE_PX * 1.05}">${childMeta?.icon || '📦'}</text>`;
+          }).join('')}
+        </g>
+      ` : ''}
     `;
     layer.appendChild(g);
   }
@@ -892,6 +960,15 @@ function setupMapInteractions() {
 
   svg.addEventListener('click', event => {
     if (panSuppressedClick) return;
+    const objectEl = event.target.closest('.map-object');
+    if (objectEl?.dataset.objectId) {
+      const obj = placedObjects.find(candidate => candidate.id === objectEl.dataset.objectId);
+      if (obj) {
+        if (isPlacementActive()) equipPendingInstanceToObject(obj);
+        else startObjectPlacement(obj);
+      }
+      return;
+    }
     const rectEl = event.target.closest('.square-tile');
     if (!rectEl) return;
     const tile = tileState.get(tileKey(Number(rectEl.dataset.q), Number(rectEl.dataset.r)));
@@ -972,6 +1049,26 @@ function setupMapInteractions() {
     zoneBoundariesVisible = !zoneBoundariesVisible;
     localStorage.setItem('noji-zone-boundaries', String(zoneBoundariesVisible));
     syncBoundaryToggle();
+  });
+
+  const labelToggle = document.querySelector('#map-label-toggle');
+  const syncLabelToggle = () => labelToggle.classList.toggle('active', mapLabelsVisible);
+  syncLabelToggle();
+  labelToggle.addEventListener('click', () => {
+    mapLabelsVisible = !mapLabelsVisible;
+    localStorage.setItem('noji-map-labels', String(mapLabelsVisible));
+    syncLabelToggle();
+    renderObjectsLayer();
+  });
+
+  const equipToggle = document.querySelector('#map-equip-toggle');
+  const syncEquipToggle = () => equipToggle.classList.toggle('active', equipBubblesAlwaysVisible);
+  syncEquipToggle();
+  equipToggle.addEventListener('click', () => {
+    equipBubblesAlwaysVisible = !equipBubblesAlwaysVisible;
+    localStorage.setItem('noji-equip-bubbles', String(equipBubblesAlwaysVisible));
+    syncEquipToggle();
+    renderObjectsLayer();
   });
 
   mapDom.legend.addEventListener('click', event => {
@@ -1147,9 +1244,39 @@ function applyBrush(center) {
 function handlePlaceClick(tile) {
   const hit = objectAt(tile.q, tile.r);
   if (hit) {
-    startObjectPlacement(hit);
+    if (isPlacementActive()) equipPendingInstanceToObject(hit);
+    else startObjectPlacement(hit);
     return;
   }
+  placePendingInstanceAtTile(tile);
+}
+
+function equipPendingInstanceToObject(targetObj) {
+  const child = instanceById(pendingPlaceInstanceId);
+  const parent = instanceById(targetObj.instanceId);
+  if (!child || child.status !== 'owned' || !parent || child.id === parent.id) {
+    showToast('장착할 수 없는 대상입니다');
+    return;
+  }
+  if (isInstanceInEquipChain(parent.id, child.id)) {
+    showToast('자기 하위 장착 구조에는 장착할 수 없습니다');
+    return;
+  }
+  child.status = 'equipped';
+  child.equippedTo = parent.id;
+  child.updatedAt = new Date().toISOString();
+  addInventory(child.type, -1);
+  activeMoveSnapshot = null;
+  clearPlacementMode();
+  renderObjectsLayer();
+  renderInventory();
+  renderInstancePanel();
+  saveGameState();
+  saveMapToStorage();
+  showToast(`🎒 ${child.label} 장착 → ${parent.label}`);
+}
+
+function placePendingInstanceAtTile(tile) {
   const selectedInstance = instanceById(pendingPlaceInstanceId);
   if (!selectedInstance || selectedInstance.status !== 'owned') {
     showToast('설치할 인스턴스를 먼저 선택하세요');
@@ -1170,6 +1297,7 @@ function handlePlaceClick(tile) {
   if (!canPlaceObject(candidate)) return;
   placedObjects.push(candidate);
   selectedInstance.status = 'placed';
+  selectedInstance.equippedTo = '';
   selectedInstance.updatedAt = new Date().toISOString();
   addInventory(placeType, -1);
   activeMoveSnapshot = null;
@@ -1183,6 +1311,36 @@ function handlePlaceClick(tile) {
   renderInlineEditorStats();
   updateGhost(tile);
 }
+
+function startObjectPlacement(obj) {
+  restoreActiveMoveSnapshot();
+  const inst = instanceById(obj.instanceId);
+  activeMoveSnapshot = { ...obj };
+  placedObjects = placedObjects.filter(candidate => candidate.id !== obj.id);
+  addInventory(obj.type, 1);
+  placeType = obj.type;
+  placeRotation = obj.rot;
+  if (inst && inst.type === obj.type) {
+    inst.status = 'owned';
+    inst.equippedTo = '';
+    inst.updatedAt = new Date().toISOString();
+  }
+  pendingPlaceInstanceId = inst?.id || availableInstancesForPlacement(obj.type, obj.id)[0]?.id || null;
+  renderObjectsLayer();
+  renderInventory();
+  renderInstancePanel();
+  saveGameState();
+  saveMapToStorage();
+  if (pendingPlaceInstanceId) {
+    renderPlacementHud();
+    showToast('기존 오브젝트를 집었습니다 — 다시 설치할 위치를 클릭하세요');
+  } else {
+    hideInstancePicker();
+    showToast('연결된 인스턴스가 없습니다');
+  }
+  if (lastHoverTile) updateGhost(lastHoverTile);
+}
+
 
 function hideInstancePicker() {
   const picker = mapDom.instancePicker;
@@ -1269,34 +1427,6 @@ function startInstancePlacement(instanceId) {
   if (lastHoverTile) updateGhost(lastHoverTile);
   document.querySelector('#map-frame-wrap')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   showToast(`📦 ${inst.label} 설치 모드 — 맵을 클릭하세요`);
-}
-
-function startObjectPlacement(obj) {
-  restoreActiveMoveSnapshot();
-  const inst = instanceById(obj.instanceId);
-  activeMoveSnapshot = { ...obj };
-  placedObjects = placedObjects.filter(candidate => candidate.id !== obj.id);
-  addInventory(obj.type, 1);
-  placeType = obj.type;
-  placeRotation = obj.rot;
-  if (inst && inst.type === obj.type) {
-    inst.status = 'owned';
-    inst.updatedAt = new Date().toISOString();
-  }
-  pendingPlaceInstanceId = inst?.id || availableInstancesForPlacement(obj.type, obj.id)[0]?.id || null;
-  renderObjectsLayer();
-  renderInventory();
-  renderInstancePanel();
-  saveGameState();
-  saveMapToStorage();
-  if (pendingPlaceInstanceId) {
-    renderPlacementHud();
-    showToast('기존 오브젝트를 집었습니다 — 다시 설치할 위치를 클릭하세요');
-  } else {
-    hideInstancePicker();
-    showToast('연결된 인스턴스가 없습니다');
-  }
-  if (lastHoverTile) updateGhost(lastHoverTile);
 }
 
 function demolishPlacedInstance(instanceId) {
@@ -1710,7 +1840,8 @@ function renderInventory() {
     const instCount = instancesOf(key).length;
     const ownedInstCount = ownedInstancesOf(key).length;
     const placedInstCount = placedInstancesOf(key).length;
-    const draftInstCount = instCount - ownedInstCount - placedInstCount;
+    const equippedInstCount = equippedInstancesOf(key).length;
+    const draftInstCount = instCount - ownedInstCount - placedInstCount - equippedInstCount;
     return `
     <button class="inv-card ${selectedInventoryItem === key ? 'selected' : ''} ${locked ? 'locked' : ''} ${!locked && stock === 0 ? 'empty' : ''}" data-inv-item="${key}"
       title="${locked ? `Lv.${it.unlockLevel}에 해금` : `${it.label} ${it.w}×${it.h}m — 클릭하면 인스턴스 목록`}">
@@ -1718,7 +1849,7 @@ function renderInventory() {
       <small>${it.label}</small>
       <i>${it.w}×${it.h}m${locked ? ` · Lv.${it.unlockLevel}` : ''}</i>
       ${!locked ? `<b class="inv-count">${stock}</b>` : ''}
-      ${!locked ? `<em class="inv-made">보유 ${ownedInstCount} · 제작중 ${draftInstCount} · 설치 ${placedInstCount}</em>` : ''}
+      ${!locked ? `<em class="inv-made">보유 ${ownedInstCount} · 제작중 ${draftInstCount} · 설치 ${placedInstCount}${equippedInstCount ? ` · 장착 ${equippedInstCount}` : ''}</em>` : ''}
       ${!locked && placed ? `<em class="inv-placed">설치 ${placed}</em>` : ''}
     </button>
   `;
@@ -1909,21 +2040,23 @@ function renderInstancePanel() {
   const rows = instances.map(inst => {
     const owned = inst.status === 'owned';
     const placed = inst.status === 'placed';
-    const locked = owned || placed;
-    const statusLabel = placed ? '설치' : owned ? '보유완료' : '제작중';
+    const equipped = inst.status === 'equipped';
+    const locked = owned || placed || equipped;
+    const statusLabel = equipped ? '장착' : placed ? '설치' : owned ? '보유완료' : '제작중';
+    const parent = equipped ? instanceById(inst.equippedTo) : null;
     return `
-    <article class="instance-card ${placed ? 'placed' : owned ? 'owned' : 'draft'}" data-instance-id="${inst.id}">
+    <article class="instance-card ${equipped ? 'equipped' : placed ? 'placed' : owned ? 'owned' : 'draft'}" data-instance-id="${inst.id}">
       <div class="instance-head">
         <strong>${item.icon || '📦'} ${item.label} <em>${statusLabel}</em></strong>
         <div class="instance-card-actions">
-          ${placed ? `<button class="danger" data-instance-act="demolish-instance">철거</button>` : owned ? `<button data-instance-act="place-instance">설치</button><button data-instance-act="edit">수정</button>` : `<button data-instance-act="complete">완료</button><button class="danger" data-instance-act="delete">삭제</button>`}
+          ${equipped ? '' : placed ? `<button class="danger" data-instance-act="demolish-instance">철거</button>` : owned ? `<button data-instance-act="place-instance">설치</button><button data-instance-act="edit">수정</button>` : `<button data-instance-act="complete">완료</button><button class="danger" data-instance-act="delete">삭제</button>`}
         </div>
       </div>
       <div class="instance-fields">
         <label>라벨 <input type="text" data-instance-field="label" value="${inst.label}" placeholder="예: 큰 텐트 A" ${locked ? 'disabled' : ''} /></label>
         <label>소유자 <select data-instance-field="owner" ${locked ? 'disabled' : ''}>${playerOptions(inst.owner)}</select></label>
       </div>
-      ${placed ? '<p class="instance-lock-note">맵에 설치된 상태입니다. 맵 오브젝트를 클릭해 집어 들면 보유 상태로 돌아갑니다.</p>' : owned ? '<p class="instance-lock-note">보유 상태입니다. 수정 버튼을 누르면 다시 제작 상태로 전환됩니다.</p>' : ''}
+      ${equipped ? `<p class="instance-lock-note">${parent ? `${parent.label}에 장착된 상태입니다.` : '다른 인스턴스에 장착된 상태입니다.'}</p>` : placed ? '<p class="instance-lock-note">맵에 설치된 상태입니다. 맵 오브젝트를 클릭해 집어 들면 보유 상태로 돌아갑니다.</p>' : owned ? '<p class="instance-lock-note">보유 상태입니다. 수정 버튼을 누르면 다시 제작 상태로 전환됩니다.</p>' : ''}
       <div class="attachment-row">
         <label class="attach-button ${locked ? 'disabled' : ''}">📎 파일 첨부<input type="file" data-attachment-input="files" multiple ${locked ? 'disabled' : ''} /></label>
         <label class="attach-button ${locked ? 'disabled' : ''}">🖼️ 이미지 첨부<input type="file" data-attachment-input="images" accept="image/*" multiple ${locked ? 'disabled' : ''} /></label>
@@ -1935,7 +2068,7 @@ function renderInstancePanel() {
   }).join('');
   panel.innerHTML = `
     <div class="instance-toolbar" data-instance-type="${type}">
-      <div><b>${item.icon || '📦'} ${item.label}</b><span> 보유 ${ownedInstancesOf(type).length} · 제작중 ${instances.length - ownedInstancesOf(type).length - placedInstancesOf(type).length} · 설치 ${placedInstancesOf(type).length}</span></div>
+      <div><b>${item.icon || '📦'} ${item.label}</b><span> 보유 ${ownedInstancesOf(type).length} · 제작중 ${instances.length - ownedInstancesOf(type).length - placedInstancesOf(type).length - equippedInstancesOf(type).length} · 설치 ${placedInstancesOf(type).length}${equippedInstancesOf(type).length ? ` · 장착 ${equippedInstancesOf(type).length}` : ''}</span></div>
       <div class="instance-actions">
         <button data-instance-act="create">🛠️ 제작</button>
       </div>

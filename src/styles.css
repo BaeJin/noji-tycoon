@@ -1374,3 +1374,24 @@ body.modal-open { overflow: hidden; }
 .placement-hud-actions button:hover { border-color:var(--gold); }
 .instance-card.placed { border-color: rgba(111, 185, 255, .42); background: rgba(28, 64, 102, .2); }
 .instance-card.placed .instance-head strong em { background: rgba(111, 185, 255, .16); color: #9fd0ff; }
+
+/* ---------- map labels / equipment bubbles ---------- */
+.map-object { pointer-events: auto; cursor: pointer; }
+.equip-bubble.hover { display: none; }
+.map-object:hover .equip-bubble.hover { display: block; }
+.equip-bubble-box {
+  fill: rgba(5, 9, 6, .88);
+  stroke: rgba(240,193,90,.58);
+  stroke-width: 1.2;
+  filter: drop-shadow(0 8px 12px rgba(0,0,0,.5));
+}
+.equip-bubble-icon {
+  dominant-baseline: middle;
+  text-anchor: middle;
+  paint-order: stroke;
+  stroke: rgba(0,0,0,.62);
+  stroke-width: 2px;
+  pointer-events: none;
+}
+.instance-card.equipped { border-color: rgba(188, 147, 255, .42); background: rgba(60, 38, 92, .2); }
+.instance-card.equipped .instance-head strong em { background: rgba(188, 147, 255, .16); color: #d4bcff; }
